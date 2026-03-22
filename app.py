@@ -24,7 +24,7 @@ st.markdown("""
 </style>
 
 <div class="titulo-topo">
-    ROMANUS<span class="versao-topo">5.4</span>
+    ROMANUS<span class="versao-topo">5.4.1</span>
 </div>
 """, unsafe_allow_html=True)
 st.subheader("A IA que não passa pano.")
