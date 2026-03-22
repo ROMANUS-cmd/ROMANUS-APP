@@ -6,7 +6,7 @@ st.set_page_config(page_title="ROMANUS 5.4.1", layout="wide")
 api_key = st.secrets["GEMINI_API_KEY"]
 client = genai.Client(api_key=api_key)
 
-st.title("ROMANUS 5.4.1")
+st.title("ROMANUS versão 5.4.1")
 st.subheader("A IA que não passa pano.")
 
 prompt_base = """
