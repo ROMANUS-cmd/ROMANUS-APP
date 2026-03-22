@@ -83,12 +83,6 @@ for item in st.session_state.historico:
         st.markdown(item["texto"])
 
 pergunta = st.chat_input("Pergunte à ROMANUS...")
-for item in st.session_state.historico:
-    role = "user" if item["tipo"] == "usuario" else "assistant"
-    with st.chat_message(role):
-        st.markdown(item["texto"])
-
-pergunta = st.chat_input("Pergunte à ROMANUS...")
 
 if pergunta:
     st.session_state.historico.append({"tipo": "usuario", "texto": pergunta})
