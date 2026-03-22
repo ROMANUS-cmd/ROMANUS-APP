@@ -75,13 +75,14 @@ def enviar_pergunta():
 
     st.session_state.historico.append({"tipo": "ia", "texto": texto_resposta})
     st.session_state.caixa_texto = ""
-# Espaço dinâmico para empurrar a conversa para baixo quando houver poucas mensagens
-if len(st.session_state.historico) == 0:
-    st.markdown("<div style='height: 45vh;'></div>", unsafe_allow_html=True)
-elif len(st.session_state.historico) <= 2:
-    st.markdown("<div style='height: 28vh;'></div>", unsafe_allow_html=True)
-elif len(st.session_state.historico) <= 4:
-    st.markdown("<div style='height: 14vh;'></div>", unsafe_allow_html=True)
+st.session_state.caixa_texto = ""
+
+for item in st.session_state.historico:
+    role = "user" if item["tipo"] == "usuario" else "assistant"
+    with st.chat_message(role):
+        st.markdown(item["texto"])
+
+pergunta = st.chat_input("Pergunte à ROMANUS...")
 for item in st.session_state.historico:
     role = "user" if item["tipo"] == "usuario" else "assistant"
     with st.chat_message(role):
