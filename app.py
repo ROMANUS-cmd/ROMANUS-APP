@@ -6,7 +6,27 @@ st.set_page_config(page_title="ROMANUS 5.4.1", layout="wide")
 api_key = st.secrets["GEMINI_API_KEY"]
 client = genai.Client(api_key=api_key)
 
-st.title("ROMANUS versão 5.4.1")
+st.markdown("""
+<style>
+.titulo-topo {
+    font-size: 56px;
+    font-weight: 800;
+    margin-bottom: 0;
+    line-height: 1.1;
+}
+.versao-topo {
+    font-size: 32px;
+    font-weight: 600;
+    color: #6b7280;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+</style>
+
+<div class="titulo-topo">
+    ROMANUS<span class="versao-topo">5.4</span>
+</div>
+""", unsafe_allow_html=True)
 st.subheader("A IA que não passa pano.")
 
 prompt_base = """
