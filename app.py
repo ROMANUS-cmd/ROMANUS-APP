@@ -76,11 +76,27 @@ def enviar_pergunta():
     st.session_state.historico.append({"tipo": "ia", "texto": texto_resposta})
     st.session_state.caixa_texto = ""
 
-st.text_input("Digite sua ordem:", key="caixa_texto")
-st.button("Enviar", on_click=enviar_pergunta)
-
 for item in st.session_state.historico:
-    if item["tipo"] == "usuario":
-        st.markdown(f"*Você:* {item['texto']}")
-    else:
-        st.markdown(f"*ROMANUS:* {item['texto']}")
+    role = "user" if item["tipo"] == "usuario" else "assistant"
+    with st.chat_message(role):
+        st.markdown(item["texto"])
+
+pergunta = st.chat_input("Pergunte à ROMANUS...")
+
+if pergunta:
+    st.session_state.historico.append({"tipo": "usuario", "texto": pergunta})
+
+    with st.chat_message("user"):
+        st.markdown(pergunta)
+
+    resposta = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=f"{prompt_base}\n\nPergunta do usuário: {pergunta}",
+    )
+
+    texto_resposta = resposta.text.strip() if resposta.text else "Sem resposta no momento."
+
+    st.session_state.historico.append({"tipo": "ia", "texto": texto_resposta})
+
+    with st.chat_message("assistant"):
+        st.markdown(texto_resposta)
