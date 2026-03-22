@@ -67,17 +67,6 @@ def enviar_pergunta():
 
     st.session_state.historico.append({"tipo": "usuario", "texto": pergunta})
 
-    resposta = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=f"{prompt_base}\n\nPergunta do usuário: {pergunta}",
-    )
-
-    texto_resposta = resposta.text.strip() if resposta.text else "Sem resposta no momento."
-
-    st.session_state.historico.append({"tipo": "ia", "texto": texto_resposta})
-    st.session_state.caixa_texto = ""
-st.session_state.caixa_texto = ""
-
 for item in st.session_state.historico:
     role = "user" if item["tipo"] == "usuario" else "assistant"
     with st.chat_message(role):
