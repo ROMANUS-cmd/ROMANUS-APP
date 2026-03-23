@@ -28,35 +28,39 @@ st.markdown("""
 <style>
 .topo-fixo {
     position: fixed;
-    top: 20px;
-    left: 40px;
+    top: 0;
+    left: 0;
+    width: 100%;
     z-index: 9999;
-    background-color: white;
-    padding: 10px 20px 10px 0;
+    background: white;
+    padding: 24px 40px 18px 40px;
+    border-bottom: 1px solid #eeeeee;
 }
 
 .topo-fixo h1 {
     margin: 0;
     font-size: 56px;
     font-weight: 800;
-    line-height: 1;
+    line-height: 1.1;
+    color: #111111;
 }
 
 .topo-fixo p {
-    margin: 8px 0 0 0;
+    margin: 10px 0 0 0;
     font-size: 20px;
+    color: #111111;
 }
 
 .bloco-chat {
-    margin-top: 140px;
+    margin-top: 210px;
 }
 </style>
 
-st.markdown("""
-<style>
-.topo-fixo {
-    position: fixed;
-    top: 0;
+<div class="topo-fixo">
+    <h1>ROMANUS <span style="font-size:28px;">5.4.1</span></h1>
+    <p>A IA que não passa pano.</p>
+</div>
+""", unsafe_allow_html=True)
     left: 0;
     width: 100%;
     z-index: 9999;
