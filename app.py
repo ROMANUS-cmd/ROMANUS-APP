@@ -18,7 +18,7 @@ st.markdown("""
     margin: 0;
     font-size: 30px;
     font-weight: 900;
-    line-height: 0;
+    line-height: -5;
     color: #111111;
     letter-spacing: 1px;
 }
