@@ -133,6 +133,7 @@ def enviar_pergunta():
 
 st.markdown('<div class="bloco-chat">', unsafe_allow_html=True)
 for item in st.session_state.historico:
+    st.markdown('</div>', unsafe_allow_html=True)
     role = "user" if item["tipo"] == "usuario" else "assistant"
     with st.chat_message(role):
         st.markdown(item["texto"])
