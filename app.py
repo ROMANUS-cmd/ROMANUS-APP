@@ -24,7 +24,7 @@ st.markdown("""
 }
 </style>
 
-[22:04, 22/03/2026] André Romano: st.markdown("""
+st.markdown("""
 <style>
 .topo-fixo {
     position: fixed;
