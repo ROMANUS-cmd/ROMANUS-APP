@@ -22,10 +22,6 @@ st.markdown("""
     margin-left: 6px;
     vertical-align: middle;
 }
-</style>
-""", unsafe_allow_html=True)
-st.markdown("""
-<style>
 .topo-fixo {
     position: fixed;
     top: 0;
@@ -36,7 +32,6 @@ st.markdown("""
     padding: 24px 40px 18px 40px;
     border-bottom: 1px solid #eeeeee;
 }
-
 .topo-fixo h1 {
     margin: 0;
     font-size: 56px;
@@ -44,13 +39,11 @@ st.markdown("""
     line-height: 1.1;
     color: #111111;
 }
-
 .topo-fixo p {
     margin: 10px 0 0 0;
     font-size: 20px;
     color: #111111;
 }
-
 .bloco-chat {
     margin-top: 210px;
 }
@@ -62,38 +55,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-    left: 0;
-    width: 100%;
-    z-index: 9999;
-    background: white;
-    padding: 24px 40px 18px 40px;
-    border-bottom: 1px solid #eeeeee;
-}
-
-.topo-fixo h1 {
-    margin: 0;
-    font-size: 56px;
-    font-weight: 800;
-    line-height: 1.1;
-    color: #111111;
-}
-
-.topo-fixo p {
-    margin: 10px 0 0 0;
-    font-size: 20px;
-    color: #111111;
-}
-
-.bloco-chat {
-    margin-top: 210px;
-}
-</style>
-
-<div class="topo-fixo">
-    <h1>ROMANUS <span style="font-size:28px;">5.4.1</span></h1>
-    <p>A IA que não passa pano.</p>
-</div>
-""", unsafe_allow_html=True)
 prompt_base = """
 Você é ROMANUS, a IA que não passa pano.
 
@@ -132,11 +93,13 @@ def enviar_pergunta():
     st.session_state.historico.append({"tipo": "usuario", "texto": pergunta})
 
 st.markdown('<div class="bloco-chat">', unsafe_allow_html=True)
+
 for item in st.session_state.historico:
-    st.markdown('</div>', unsafe_allow_html=True)
     role = "user" if item["tipo"] == "usuario" else "assistant"
     with st.chat_message(role):
         st.markdown(item["texto"])
+
+st.markdown('</div>', unsafe_allow_html=True)
 
 pergunta = st.chat_input("Pergunte à ROMANUS...")
 
