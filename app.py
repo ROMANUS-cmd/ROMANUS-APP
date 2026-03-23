@@ -24,12 +24,76 @@ st.markdown("""
 }
 </style>
 
-<div class="titulo-topo">
-    ROMANUS<span class="versao-topo">5.4.1</span>
+[22:04, 22/03/2026] André Romano: st.markdown("""
+<style>
+.topo-fixo {
+    position: fixed;
+    top: 20px;
+    left: 40px;
+    z-index: 9999;
+    background-color: white;
+    padding: 10px 20px 10px 0;
+}
+
+.topo-fixo h1 {
+    margin: 0;
+    font-size: 56px;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.topo-fixo p {
+    margin: 8px 0 0 0;
+    font-size: 20px;
+}
+
+.bloco-chat {
+    margin-top: 140px;
+}
+</style>
+
+<div class="topo-fixo">
+    <h1>ROMANUS <span style="font-size:28px;">5.4.1</span></h1>
+    <p>A IA que não passa pano.</p>
 </div>
 """, unsafe_allow_html=True)
-st.subheader("A IA que não passa pano.")
+[22:08, 22/03/2026] André Romano: st.markdown("""
+<style>
+.topo-fixo {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 9999;
+    background: white;
+    padding: 24px 40px 18px 40px;
+    border-bottom: 1px solid #eeeeee;
+}
 
+.topo-fixo h1 {
+    margin: 0;
+    font-size: 56px;
+    font-weight: 800;
+    line-height: 1.1;
+    color: #111111;
+}
+
+.topo-fixo p {
+    margin: 10px 0 0 0;
+    font-size: 20px;
+    color: #111111;
+}
+
+.bloco-chat {
+    margin-top: 210px;
+}
+</style>
+
+<div class="topo-fixo">
+    <h1>ROMANUS <span style="font-size:28px;">5.4.1</span></h1>
+    <p>A IA que não passa pano.</p>
+</div>
+""", unsafe_allow_html=True)
 prompt_base = """
 Você é ROMANUS, a IA que não passa pano.
 
