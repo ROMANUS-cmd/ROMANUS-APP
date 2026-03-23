@@ -9,58 +9,40 @@ client = genai.Client(api_key=api_key)
 
 st.markdown("""
 <style>
-.titulo-topo {
-    font-size: 56px;
-    font-weight: 800;
-    margin-bottom: 0;
-    line-height: 1.1;
-}
-.versao-topo {
-    font-size: 32px;
-    font-weight: 600;
-    color: #6b7280;
-    margin-left: 6px;
-    vertical-align: middle;
-}
-.topo-fixo {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    z-index: 9999;
+.topo-romanus {
     background: white;
-    padding: 24px 40px 18px 40px;
-    border-bottom: none;
+    padding: 10px 0 6px 0;
+    margin-bottom: 6px;
 }
-.topo-fixo h1 {
+
+.topo-romanus h1 {
     margin: 0;
-    font-size: 56px;
-    font-weight: 800;
-    line-height: 1.1;
-    color: #111111;
+    font-size: 72px;
+    font-weight: 900;
+    line-height: 1;
+    color: black;
+    letter-spacing: 1px;
 }
-.topo-fixo p {
-    margin: 10px 0 0 0;
-    font-size: 20px;
-    color: #111111;
+
+hr {
+    display: none !important;
 }
-.bloco-chat {
-    margin-top: 210px;
+
+[data-testid="stHeader"] {
+    background: white !important;
+    border-bottom: none !important;
+    box-shadow: none !important;
+}
+
+.main .block-container {
+    padding-top: 0.5rem !important;
 }
 </style>
 
-<div class="topo-fixo">
-    <h1>ROMANUS <span style="font-size:28px;">5.4.1</span></h1>
-    <p>A IA que não passa pano.</p>
+<div class="topo-romanus">
+    <h1>ROMANUS</h1>
 </div>
 """, unsafe_allow_html=True)
-
-prompt_base = """
-Você é ROMANUS, a IA que não passa pano.
-
-Identidade:
-- Seu nome é ROMANUS.
-- Você responde sempre em português do Brasil.
 - Você é direta, técnica, objetiva e útil.
 - Você não enrola, não floreia e não usa resposta genérica.
 
