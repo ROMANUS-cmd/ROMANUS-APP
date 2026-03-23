@@ -23,7 +23,7 @@ st.markdown("""
     vertical-align: middle;
 }
 </style>
-
+""", unsafe_allow_html=True)
 st.markdown("""
 <style>
 .topo-fixo {
