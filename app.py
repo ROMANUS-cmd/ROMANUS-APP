@@ -9,14 +9,15 @@ client = genai.Client(api_key=api_key)
 st.markdown("""
 <style>
 .topo-romanus {
-position: sticky;
-top: 0;
-z-index: 999;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 9999;
     background: white;
     padding: 0 10px 0 10px;
-   margin: -65px 0 0 0;
+    margin: -65px 0 0 0;
+    width: 100%;
 }
-
 .topo-romanus h1 {
     margin: 0;
     font-size: 30px;
