@@ -45,7 +45,12 @@ hr {
     padding-top: 0rem !important;
     padding-bottom: 2rem !important;
 }
-
+    padding-top: 0.6rem !important;
+    padding-bottom: 2rem !important;
+}
+    padding-top: 6.2rem !important;
+    padding-bottom: 2rem !important;
+}
 </style>
 
 <div class="topo-romanus">
