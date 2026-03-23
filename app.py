@@ -1,98 +1,71 @@
 import streamlit as st
-from google import genai
-from google.genai import types
+import google.generativeai as genai
+import os
 
-st.set_page_config(page_title="ROMANUS 5.4.1", layout="wide")
+# Configuração da Página
+st.set_page_config(page_title="ROMANUS", layout="centered")
 
-api_key = st.secrets["GEMINI_API_KEY"]
-client = genai.Client(api_key=api_key)
-
+# Estilização CSS para o título e layout
 st.markdown("""
-<style>
-.topo-romanus {
-    background: white;
-    padding: 8px 0 4px 0;
-    margin-bottom: 4px;
-}
+    <style>
+    .main-title {
+        font-size: 50px;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 30px;
+        color: #FFFFFF;
+    }
+    /* Ajuste para evitar sobreposição no chat */
+    .stChatMessage {
+        margin-bottom: 10px;
+    }
+    footer {visibility: hidden;}
+    </style>
+    <div class="main-title">ROMANUS</div>
+    """, unsafe_allow_html=True)
 
-.topo-romanus h1 {
-    margin: 0;
-    font-size: 72px;
-    font-weight: 900;
-    line-height: 1;
-    color: #111111;
-    letter-spacing: 1px;
-}
-
-.bloco-chat {
-    margin-top: 20px;
-}
-
-hr {
-    display: none !important;
-}
-
-[data-testid="stHeader"] {
-    background: white !important;
-    border-bottom: none !important;
-    box-shadow: none !important;
-}
-</style>
-
-<div class="topo-romanus">
-    <h1>ROMANUS</h1>
-</div>
-""", unsafe_allow_html=True)
-if "caixa_texto" not in st.session_state:
-    st.session_state.caixa_texto = ""
-
-def enviar_pergunta():
-    pergunta = st.session_state.caixa_texto.strip()
-
-    if not pergunta:
-        return
-
-    st.session_state.historico.append({"tipo": "usuario", "texto": pergunta})
-
-st.markdown('<div class="bloco-chat">', unsafe_allow_html=True)
-
-for item in st.session_state.historico:
-    role = "user" if item["tipo"] == "usuario" else "assistant"
-    with st.chat_message(role):
-        st.markdown(item["texto"])
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-pergunta = st.chat_input("Pergunte à ROMANUS...")
-
-if pergunta:
-    st.session_state.historico.append({"tipo": "usuario", "texto": pergunta})
-
-    with st.chat_message("user"):
-        st.markdown(pergunta)
-
-    if "internet" in pergunta.lower() or "pesquisa" in pergunta.lower():
-        texto_resposta = "Sim. Respondo com base em critérios técnicos, hierarquia normativa e confirmação complementar por fontes confiáveis da internet."
+# Inicialização do Modelo (Configuração da API)
+# Certifique-se de que a variável de ambiente GOOGLE_API_KEY esteja configurada no GitHub Secrets/Streamlit Cloud
+if "GOOGLE_API_KEY" in st.secrets:
+    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+else:
+    # Fallback para desenvolvimento local caso não use secrets
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if api_key:
+        genai.configure(api_key=api_key)
     else:
-        resposta = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=f"{prompt_base}\n\nPergunta do usuário: {pergunta}",
-        )
-        texto_resposta = resposta.text.strip() if resposta.text else "Sem resposta no momento."
+        st.error("Erro: API Key não encontrada. Configure GOOGLE_API_KEY nas Secrets.")
+        st.stop()
 
-    st.session_state.historico.append({"tipo": "ia", "texto": texto_resposta})
+# Inicialização do st.session_state (Requisito 4)
+if "chat_session" not in st.session_state:
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    st.session_state.chat_session = model.start_chat(history=[])
 
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Exibição do Histórico de Mensagens (Requisito 3 e 5)
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# Área de Input do Chat
+if prompt := st.chat_input("Digite sua mensagem..."):
+    # Adiciona mensagem do usuário ao histórico da interface
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # Processamento da Resposta da IA
     with st.chat_message("assistant"):
-        st.markdown(texto_resposta)
-        st.markdown("""
-<script>
-function scrollToBottom() {
-    window.scrollTo(0, document.body.scrollHeight);
-}
+        try:
+            response = st.session_state.chat_session.send_message(prompt)
+            full_response = response.text
+            st.markdown(full_response)
+            
+            # Adiciona resposta ao histórico da interface
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
+        except Exception as e:
+            st.error(f"Erro ao processar resposta: {e}")
 
-window.addEventListener("load", scrollToBottom);
-setTimeout(scrollToBottom, 200);
-setTimeout(scrollToBottom, 600);
-setTimeout(scrollToBottom, 1000);
-</script>
-""", unsafe_allow_html=True)
