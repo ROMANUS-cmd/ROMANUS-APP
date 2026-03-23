@@ -21,7 +21,7 @@ st.markdown("""
 }
 
 .bloco-chat {
-    margin-top: 8px;
+    margin-top: 78px;
 }
 
 hr {
