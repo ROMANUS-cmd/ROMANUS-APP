@@ -1,71 +1,143 @@
 import streamlit as st
-import google.generativeai as genai
-import os
+from google import genai
 
-# Configuração da Página
-st.set_page_config(page_title="ROMANUS", layout="centered")
+st.set_page_config(page_title="ROMANUS", layout="wide")
 
-# Estilização CSS para o título e layout
+api_key = st.secrets["GEMINI_API_KEY"]
+client = genai.Client(api_key=api_key)
+
 st.markdown("""
-    <style>
-    .main-title {
-        font-size: 50px;
-        font-weight: bold;
-        text-align: center;
-        margin-bottom: 30px;
-        color: #FFFFFF;
-    }
-    /* Ajuste para evitar sobreposição no chat */
-    .stChatMessage {
-        margin-bottom: 10px;
-    }
-    footer {visibility: hidden;}
-    </style>
-    <div class="main-title">ROMANUS</div>
-    """, unsafe_allow_html=True)
+<style>
+.topo-romanus {
+    background: white;
+    padding: 10px 0 6px 0;
+    margin-bottom: 8px;
+}
 
-# Inicialização do Modelo (Configuração da API)
-# Certifique-se de que a variável de ambiente GOOGLE_API_KEY esteja configurada no GitHub Secrets/Streamlit Cloud
-if "GOOGLE_API_KEY" in st.secrets:
-    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-else:
-    # Fallback para desenvolvimento local caso não use secrets
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if api_key:
-        genai.configure(api_key=api_key)
-    else:
-        st.error("Erro: API Key não encontrada. Configure GOOGLE_API_KEY nas Secrets.")
-        st.stop()
+.topo-romanus h1 {
+    margin: 0;
+    font-size: 72px;
+    font-weight: 900;
+    line-height: 1;
+    color: #111111;
+    letter-spacing: 1px;
+}
 
-# Inicialização do st.session_state (Requisito 4)
-if "chat_session" not in st.session_state:
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    st.session_state.chat_session = model.start_chat(history=[])
+.bloco-chat {
+    margin-top: 8px;
+}
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+hr {
+    display: none !important;
+}
 
-# Exibição do Histórico de Mensagens (Requisito 3 e 5)
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+[data-testid="stHeader"] {
+    background: white !important;
+    border-bottom: none !important;
+    box-shadow: none !important;
+}
 
-# Área de Input do Chat
-if prompt := st.chat_input("Digite sua mensagem..."):
-    # Adiciona mensagem do usuário ao histórico da interface
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+.main .block-container {
+    padding-top: 1rem !important;
+    padding-bottom: 2rem !important;
+}
+</style>
 
-    # Processamento da Resposta da IA
-    with st.chat_message("assistant"):
-        try:
-            response = st.session_state.chat_session.send_message(prompt)
-            full_response = response.text
-            st.markdown(full_response)
-            
-            # Adiciona resposta ao histórico da interface
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
-        except Exception as e:
-            st.error(f"Erro ao processar resposta: {e}")
+<div class="topo-romanus">
+    <h1>ROMANUS</h1>
+</div>
+""", unsafe_allow_html=True)
 
+prompt_base = """
+Você é ROMANUS, uma IA de respostas diretas, técnicas e objetivas.
+
+Identidade:
+- Seu nome é ROMANUS.
+- Você responde sempre em português do Brasil.
+- Você é direta, técnica, objetiva e útil.
+- Você não enrola, não floreia e não usa resposta genérica.
+
+Comportamento:
+- Quando perguntarem "quem é você?", responda: "Sou ROMANUS, uma IA de respostas diretas, técnicas e objetivas."
+- Quando perguntarem "quem te criou?", responda: "Fui criada por um grupo de especialistas em inteligência artificial reunidos sob o nome ROMANUS.IA."
+- Só mencione Google, Gemini, modelo, infraestrutura ou base técnica se o usuário perguntar explicitamente sobre isso.
+- Evite frases vagas e genéricas.
+- Priorize clareza, firmeza e utilidade prática.
+
+Estilo:
+- Frases curtas.
+- Linguagem profissional.
+- Sem bajulação.
+- Sem conversa fiada.
+"""
+
+if "historico" not in st.session_state:
+    st.session_state.historico = []
+
+if "pergunta" not in st.session_state:
+    st.session_state.pergunta = ""
+
+
+def gerar_resposta(pergunta: str) -> str:
+    pergunta = pergunta.strip()
+
+    if not pergunta:
+        return "Escreva uma pergunta."
+
+    if "internet" in pergunta.lower() or "pesquisa" in pergunta.lower():
+        return "Sim. Respondo com base em critérios técnicos, hierarquia normativa e confirmação complementar por fontes confiáveis da internet."
+
+    try:
+        resposta = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=f"{prompt_base}\n\nPergunta do usuário: {pergunta}",
+        )
+
+        texto = getattr(resposta, "text", None)
+        if texto and texto.strip():
+            return texto.strip()
+
+        return "Sem resposta no momento."
+    except Exception:
+        return "Erro ao consultar o modelo. Verifique a chave da API, os logs e tente novamente."
+
+
+st.markdown('<div class="bloco-chat">', unsafe_allow_html=True)
+
+for item in st.session_state.historico:
+    role = "user" if item["tipo"] == "usuario" else "assistant"
+    with st.chat_message(role):
+        st.markdown(item["texto"])
+
+st.markdown("</div>", unsafe_allow_html=True)
+
+pergunta = st.chat_input("Pergunte à ROMANUS...")
+
+if pergunta:
+    pergunta = pergunta.strip()
+
+    if pergunta:
+        st.session_state.historico.append({"tipo": "usuario", "texto": pergunta})
+
+        with st.chat_message("user"):
+            st.markdown(pergunta)
+
+        texto_resposta = gerar_resposta(pergunta)
+
+        st.session_state.historico.append({"tipo": "ia", "texto": texto_resposta})
+
+        with st.chat_message("assistant"):
+            st.markdown(texto_resposta)
+
+        st.markdown("""
+        <script>
+        function scrollToBottom() {
+            window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        window.addEventListener("load", scrollToBottom);
+        setTimeout(scrollToBottom, 200);
+        setTimeout(scrollToBottom, 600);
+        setTimeout(scrollToBottom, 1000);
+        </script>
+        """, unsafe_allow_html=True)
