@@ -30,7 +30,7 @@ st.markdown("""
     z-index: 9999;
     background: white;
     padding: 24px 40px 18px 40px;
-    border-bottom: 1px solid #eeeeee;
+    border-bottom: none;
 }
 .topo-fixo h1 {
     margin: 0;
