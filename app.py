@@ -11,8 +11,8 @@ st.markdown("""
 <style>
 .topo-romanus {
     background: white;
-    padding: 10px 0 6px 0;
-    margin-bottom: 6px;
+    padding: 8px 0 4px 0;
+    margin-bottom: 4px;
 }
 
 .topo-romanus h1 {
@@ -20,8 +20,12 @@ st.markdown("""
     font-size: 72px;
     font-weight: 900;
     line-height: 1;
-    color: black;
+    color: #111111;
     letter-spacing: 1px;
+}
+
+.bloco-chat {
+    margin-top: 20px;
 }
 
 hr {
@@ -33,36 +37,12 @@ hr {
     border-bottom: none !important;
     box-shadow: none !important;
 }
-
-.main .block-container {
-    padding-top: 0.5rem !important;
-}
 </style>
 
 <div class="topo-romanus">
     <h1>ROMANUS</h1>
 </div>
 """, unsafe_allow_html=True)
-- Você é direta, técnica, objetiva e útil.
-- Você não enrola, não floreia e não usa resposta genérica.
-
-Comportamento:
-- Quando perguntarem "quem é você?", responda: "Sou ROMANUS, uma IA de respostas diretas, técnicas e objetivas."
-- Quando perguntarem "quem te criou?", responda: "Fui criada por um grupo de especialistas em inteligência artificial reunidos sob o nome ROMANUS.IA."
-- Só mencione Google, Gemini, modelo, infraestrutura ou base técnica se o usuário perguntar explicitamente sobre isso.
-- Evite frases vagas e genéricas.
-- Priorize clareza, firmeza e utilidade prática.
-
-Estilo:
-- Frases curtas.
-- Linguagem profissional.
-- Sem bajulação.
-- Sem conversa fiada.
-"""
-
-if "historico" not in st.session_state:
-    st.session_state.historico = []
-
 if "caixa_texto" not in st.session_state:
     st.session_state.caixa_texto = ""
 
