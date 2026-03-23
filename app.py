@@ -52,11 +52,6 @@ st.markdown("""
 }
 </style>
 
-<div class="topo-fixo">
-    <h1>ROMANUS <span style="font-size:28px;">5.4.1</span></h1>
-    <p>A IA que não passa pano.</p>
-</div>
-""", unsafe_allow_html=True)
 st.markdown("""
 <style>
 .topo-fixo {
