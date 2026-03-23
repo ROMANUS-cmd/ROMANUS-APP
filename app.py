@@ -79,6 +79,9 @@ if pergunta:
 
     with st.chat_message("user"):
         st.markdown(pergunta)
+        if "internet" in pergunta.lower() or "pesquisa" in pergunta.lower():
+    texto_resposta = "Sim. Respondo com base em critérios técnicos, hierarquia normativa e confirmação complementar por fontes confiáveis da internet."
+else:
 
     resposta = client.models.generate_content(
         model="gemini-2.5-flash",
