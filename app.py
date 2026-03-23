@@ -19,7 +19,14 @@ st.markdown("""
     margin-bottom: 0;
     box-sizing: border-box;
 }
-
+.topo-romanus h1 {
+    margin: 0;
+    font-size: 56px;
+    font-weight: 900;
+    line-height: 1;
+    color: #111111;
+    letter-spacing: 1px;
+}
 .bloco-chat {
     margin-top: 78px;
 }
