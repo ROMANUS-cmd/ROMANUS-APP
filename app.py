@@ -11,7 +11,7 @@ st.markdown("""
 .topo-romanus {
     background: white;
     padding: 0 10px 0 10px;
-    margin: -18px 0 0 0;
+   margin: -24px 0 0 0;
 }
 
 .topo-romanus h1 {
