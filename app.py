@@ -34,8 +34,8 @@ hr {
     box-shadow: none !important;
 }
 
-.main .block-container {
-    padding-top: 1rem !important;
+..main .block-container {
+    padding-top: 6.2rem !important;
     padding-bottom: 2rem !important;
 }
 </style>
