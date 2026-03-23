@@ -16,7 +16,7 @@ st.markdown("""
 
 .topo-romanus h1 {
     margin: 0;
-    font-size: 56px;
+    font-size: 50px;
     font-weight: 900;
     line-height: 1;
     color: #111111;
