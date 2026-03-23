@@ -77,7 +77,7 @@ pergunta = st.chat_input("Pergunte à ROMANUS...")
 if pergunta:
     st.session_state.historico.append({"tipo": "usuario", "texto": pergunta})
 
-   with st.chat_message("user"):
+with st.chat_message("user"):
     st.markdown(pergunta)
 
 if "internet" in pergunta.lower() or "pesquisa" in pergunta.lower():
