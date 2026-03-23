@@ -15,21 +15,9 @@ st.markdown("""
     width: 100%;
     z-index: 9999;
     background: white;
-    padding: 6px 24px 6px 24px;
+    padding: 2px 24px 2px 24px;
     margin-bottom: 0;
-}
-    background: white;
-    padding: 10px 0 6px 0;
-    margin-bottom: 8px;
-}
-
-.topo-romanus h1 {
-    margin: 0;
-    font-size: 72px;
-    font-weight: 900;
-    line-height: 1;
-    color: #111111;
-    letter-spacing: 1px;
+    box-sizing: border-box;
 }
 
 .bloco-chat {
