@@ -77,18 +77,17 @@ pergunta = st.chat_input("Pergunte à ROMANUS...")
 if pergunta:
     st.session_state.historico.append({"tipo": "usuario", "texto": pergunta})
 
- with st.chat_message("user"):
-    st.markdown(pergunta)
+    with st.chat_message("user"):
+        st.markdown(pergunta)
 
-if "internet" in pergunta.lower() or "pesquisa" in pergunta.lower():
-    texto_resposta = "Sim. Respondo com base em critérios técnicos, hierarquia normativa e confirmação complementar por fontes confiáveis da internet."
-else:
-    resposta = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=f"{prompt_base}\n\nPergunta do usuário: {pergunta}",
-    )
-
-    texto_resposta = resposta.text.strip() if resposta.text else "Sem resposta no momento."
+    if "internet" in pergunta.lower() or "pesquisa" in pergunta.lower():
+        texto_resposta = "Sim. Respondo com base em critérios técnicos, hierarquia normativa e confirmação complementar por fontes confiáveis da internet."
+    else:
+        resposta = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=f"{prompt_base}\n\nPergunta do usuário: {pergunta}",
+        )
+        texto_resposta = resposta.text.strip() if resposta.text else "Sem resposta no momento."
 
     st.session_state.historico.append({"tipo": "ia", "texto": texto_resposta})
 
