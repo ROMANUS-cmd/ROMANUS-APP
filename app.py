@@ -57,7 +57,7 @@ st.markdown("""
     <p>A IA que não passa pano.</p>
 </div>
 """, unsafe_allow_html=True)
-[22:08, 22/03/2026] André Romano: st.markdown("""
+st.markdown("""
 <style>
 .topo-fixo {
     position: fixed;
