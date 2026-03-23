@@ -38,6 +38,9 @@ hr {
 }
 
 .main .block-container {
+    padding-top: 0.3rem !important;
+    padding-bottom: 2rem !important;
+}
     padding-top: 0.6rem !important;
     padding-bottom: 2rem !important;
 }
