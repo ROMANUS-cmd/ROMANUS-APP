@@ -135,15 +135,4 @@ if pergunta:
         with st.chat_message("assistant"):
             st.markdown(texto_resposta)
 
-        st.markdown("""
-        <script>
-        function scrollToBottom() {
-            window.scrollTo(0, document.body.scrollHeight);
-        }
-
-        window.addEventListener("load", scrollToBottom);
-        setTimeout(scrollToBottom, 200);
-        setTimeout(scrollToBottom, 600);
-        setTimeout(scrollToBottom, 1000);
-        </script>
-        """, unsafe_allow_html=True)
+                st.rerun()
