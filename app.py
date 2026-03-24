@@ -149,7 +149,7 @@ if "pergunta" not in st.session_state:
     st.session_state.pergunta = ""
 
 
-def gerar_resposta(pergunta: str) -> str:
+def gerar_resposta(pergunta: str, imagem=None) -> str:
     pergunta = pergunta.strip()
 
     if not pergunta:
@@ -159,10 +159,16 @@ def gerar_resposta(pergunta: str) -> str:
         return "Sim. Respondo com base em critérios técnicos, hierarquia normativa e confirmação complementar por fontes confiáveis da internet."
 
     try:
-        resposta = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=f"{prompt_base}\n\nPergunta do usuário: {pergunta}",
-        )
+        if imagem is not None:
+            resposta = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[f"{prompt_base}\n\nPergunta do usuário: {pergunta}", imagem],
+            )
+        else:
+            resposta = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=f"{prompt_base}\n\nPergunta do usuário: {pergunta}",
+            )
 
         texto = getattr(resposta, "text", None)
         if texto and texto.strip():
