@@ -16,7 +16,7 @@ st.markdown("""
     width: 100%;
     background: white;
     padding: 40px 0px;
-    z-index: 9999;
+    z-index: 8000;
     border-bottom: 1px solid #eee;
 }
 }
