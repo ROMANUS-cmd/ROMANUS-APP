@@ -187,15 +187,17 @@ for item in st.session_state.historico:
         st.markdown(item["texto"])
 
 st.markdown("</div>", unsafe_allow_html=True)
-uploaded_file = st.file_uploader(
-    "Envie uma imagem para a ROMANUS",
-    type=["jpg", "jpeg", "png"]
-)
-
 imagem = None
-if uploaded_file is not None:
-    imagem = Image.open(uploaded_file)
-    st.image(imagem, caption="Imagem enviada", use_container_width=True)
+
+with st.expander("📷 Enviar imagem", expanded=False):
+    uploaded_file = st.file_uploader(
+        "Escolha uma imagem",
+        type=["jpg", "jpeg", "png"]
+    )
+
+    if uploaded_file is not None:
+        imagem = Image.open(uploaded_file)
+        st.image(imagem, caption="Imagem enviada", use_container_width=True)
 
 pergunta = st.chat_input("Pergunte à ROMANUS...")
 
