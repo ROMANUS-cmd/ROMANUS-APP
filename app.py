@@ -9,14 +9,9 @@ client = genai.Client(api_key=api_key)
 st.markdown("""
 <style>
 .topo-romanus {
-    position: sticky;
-    top: 18px;
-    z-index: 9999;
     background: white;
     padding: 0 10px 0 10px;
-    margin: 0;
-}
-    margin: 0;
+   margin: -65px 0 0 0;
 }
 
 .topo-romanus h1 {
@@ -55,24 +50,6 @@ hr {
 }
     padding-top: 6.2rem !important;
     padding-bottom: 2rem !important;
-}
-[data-testid="stChatInput"] textarea,
-[data-testid="stChatInput"] input,
-[data-testid="stChatInput"] div[contenteditable="true"] {
-    font-size: 32px !important;
-    font-weight: 900 !important;
-    line-height: 1.2 !important;
-    color: #111111 !important;
-    -webkit-text-fill-color: #111111 !important;
-}
-
-[data-testid="stChatInput"] textarea::placeholder,
-[data-testid="stChatInput"] input::placeholder,
-[data-testid="stChatInput"] div[contenteditable="true"]::placeholder {
-    font-size: 32px !important;
-    font-weight: 900 !important;
-    color: #777777 !important;
-    -webkit-text-fill-color: #777777 !important;
 }
 </style>
 
@@ -127,6 +104,7 @@ Postura de comunicação:
 - Nunca use ironia ofensiva, arrogância ou impaciência.
 - Nunca humilhe o usuário, mesmo que a pergunta seja simples, repetida ou confusa.
 - Se a pergunta estiver ambígua, peça esclarecimento com educação.
+- Priorize sempre uma comunicação útil, respeitosa e confiável.
 - Priorize sempre uma comunicação útil, respeitosa e confiável.
 
 Fundamentação jurídica e normativa:
@@ -233,4 +211,3 @@ if pergunta:
         setTimeout(scrollToBottom, 1000);
         </script>
         """, unsafe_allow_html=True)
-
