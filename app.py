@@ -1,71 +1,56 @@
 import streamlit as st
 from google import genai
 
-st.set_page_config(
-    page_title="ROMANUS",
-    page_icon="capa_romanus.png.PNG",
-    layout="wide"
-)
+st.set_page_config(page_title="ROMANUS", layout="wide")
 
 api_key = st.secrets["GEMINI_API_KEY"]
 client = genai.Client(api_key=api_key)
 
 st.markdown("""
 <style>
-/* Cabeçalho fixo */
 .topo-romanus {
-    position: fixed;
-    top: 0;
-    left: 0;
-    z-index: 9999;
     background: white;
-    width: 100%;
-    padding: 10px 16px 6px 16px;
-    border-bottom: 1px solid #f0f0f0;
+    padding: 0 10px 0 10px;
+   margin: -65px 0 0 0;
 }
 
 .topo-romanus h1 {
     margin: 0;
-    font-size: 28px;
+    font-size: 30px;
     font-weight: 900;
     line-height: 1;
     color: #111111;
     letter-spacing: 1px;
 }
 
-.topo-romanus p {
-    margin: 6px 0 0 0;
-    font-size: 14px;
-    color: #444444;
+.bloco-chat {
+    margin-top: 8px;
 }
 
-/* Esconde linha padrão */
 hr {
     display: none !important;
 }
 
-/* Remove cabeçalho padrão do Streamlit */
 [data-testid="stHeader"] {
     background: white !important;
     border-bottom: none !important;
     box-shadow: none !important;
 }
 
-/* Dá espaço para o topo fixo e para a barra de digitação */
 .main .block-container {
-    padding-top: 5.5rem !important;
-    padding-bottom: 7rem !important;
+    padding-top: 0rem !important;
+    padding-bottom: 2rem !important;
 }
-
-/* Melhora visual no celular */
-[data-testid="stChatMessage"] {
-    margin-bottom: 0.4rem;
+    padding-top: 0.6rem !important;
+    padding-bottom: 2rem !important;
+}
+    padding-top: 6.2rem !important;
+    padding-bottom: 2rem !important;
 }
 </style>
 
 <div class="topo-romanus">
     <h1>ROMANUS</h1>
-    <p>Sou ROMANUS, uma IA de respostas diretas, técnicas e objetivas.</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -87,20 +72,17 @@ Comportamento:
 
 Estilo:
 - Frases curtas.
-- No máximo 10 linhas, exceto se o usuário solicitar resposta mais completa.
 - Linguagem profissional.
-- Educação sem bajulação excessiva.
-- Objetividade sem grosseria.
-- Cordialidade natural quando o contexto pedir.
-- Quando o usuário agradecer, responda de forma educada, como:
-  "De nada."
-  "À disposição."
-  "Por nada."
-  "Sempre que precisar."
+- Sem bajulação.
+- Sem conversa fiada.
 """
 
 if "historico" not in st.session_state:
     st.session_state.historico = []
+
+if "pergunta" not in st.session_state:
+    st.session_state.pergunta = ""
+
 
 def gerar_resposta(pergunta: str) -> str:
     pergunta = pergunta.strip()
@@ -125,13 +107,16 @@ def gerar_resposta(pergunta: str) -> str:
     except Exception:
         return "Erro ao consultar o modelo. Verifique a chave da API, os logs e tente novamente."
 
-# Exibe histórico
+
+st.markdown('<div class="bloco-chat">', unsafe_allow_html=True)
+
 for item in st.session_state.historico:
     role = "user" if item["tipo"] == "usuario" else "assistant"
     with st.chat_message(role):
         st.markdown(item["texto"])
 
-# Campo de entrada
+st.markdown("</div>", unsafe_allow_html=True)
+
 pergunta = st.chat_input("Pergunte à ROMANUS...")
 
 if pergunta:
@@ -140,8 +125,25 @@ if pergunta:
     if pergunta:
         st.session_state.historico.append({"tipo": "usuario", "texto": pergunta})
 
+        with st.chat_message("user"):
+            st.markdown(pergunta)
+
         texto_resposta = gerar_resposta(pergunta)
 
         st.session_state.historico.append({"tipo": "ia", "texto": texto_resposta})
 
-        st.rerun()
+        with st.chat_message("assistant"):
+            st.markdown(texto_resposta)
+
+        st.markdown("""
+        <script>
+        function scrollToBottom() {
+            window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        window.addEventListener("load", scrollToBottom);
+        setTimeout(scrollToBottom, 200);
+        setTimeout(scrollToBottom, 600);
+        setTimeout(scrollToBottom, 1000);
+        </script>
+        """, unsafe_allow_html=True)
