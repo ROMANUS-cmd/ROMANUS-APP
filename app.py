@@ -11,41 +11,6 @@ st.markdown("""
 <style>
 .topo-romanus {
     background: white;
-    padding: 0 10px 0 10px;
-   margin: -65px 0 0 0;
-}
-
-.topo-romanus h1 {
-    margin: 0;
-    font-size: 30px;
-    font-weight: 900;
-    line-height: 1;
-    color: #111111;
-    letter-spacing: 1px;
-}
-
-.bloco-chat {
-    min-height: 72vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    margin-top: 8px;
-}
-
-hr {
-    display: none !important;
-}
-
-[data-testid="stHeader"] {
-    background: white !important;
-    border-bottom: none !important;
-    box-shadow: none !important;
-}
-
-st.markdown("""
-<style>
-.topo-romanus {
-    background: white;
     padding: 0 10px;
     margin-top: -40px;
 }
