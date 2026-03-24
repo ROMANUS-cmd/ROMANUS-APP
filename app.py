@@ -8,6 +8,16 @@ api_key = st.secrets["GEMINI_API_KEY"]
 client = genai.Client(api_key=api_key)
 
 st.markdown("""
+/* FIXAR BARRA DE MENSAGEM */
+[data-testid="stChatInput"] {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: white;
+    padding: 10px 20px;
+    z-index: 9999;
+}
 <style>
 .topo-romanus {
     position: fixed;
