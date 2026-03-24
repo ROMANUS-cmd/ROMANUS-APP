@@ -42,16 +42,40 @@ hr {
     box-shadow: none !important;
 }
 
+st.markdown("""
+<style>
+.topo-romanus {
+    background: white;
+    padding: 0 10px;
+    margin-top: -40px;
+}
+
+.topo-romanus h1 {
+    margin: 0;
+    font-size: 30px;
+    font-weight: 900;
+    color: #111;
+}
+
+.bloco-chat {
+    min-height: 75vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    margin-top: 10px;
+}
+
+[data-testid="stHeader"] {
+    background: white !important;
+    box-shadow: none !important;
+}
+
 .main .block-container {
     padding-top: 0rem !important;
-    padding-bottom: 2rem !important;
+    padding-bottom: 4rem !important;
 }
-    padding-top: 0.6rem !important;
-    padding-bottom: 2rem !important;
-}
-    padding-top: 6.2rem !important;
-    padding-bottom: 2rem !important;
-}
+</style>
+""", unsafe_allow_html=True)
 </style>
 
 <div class="topo-romanus">
