@@ -24,7 +24,7 @@ st.markdown("""
 }
 
 .bloco-chat {
-    min-height: 80vh;
+    min-height: 72vh;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
