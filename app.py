@@ -208,7 +208,7 @@ if pergunta:
         with st.chat_message("user"):
             st.markdown(pergunta)
 
-        texto_resposta = gerar_resposta(pergunta)
+        texto_resposta = gerar_resposta(pergunta, imagem)
 
         st.session_state.historico.append({"tipo": "ia", "texto": texto_resposta})
 
