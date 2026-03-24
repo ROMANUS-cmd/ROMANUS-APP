@@ -56,15 +56,17 @@ hr {
     padding-top: 6.2rem !important;
     padding-bottom: 2rem !important;
 }
+[data-testid="stChatInput"] textarea,
 [data-testid="stChatInput"] input {
-    font-size: 26px !important;
-    font-weight: 700 !important;
+    font-size: 30px !important;
+    font-weight: 900 !important;
     color: #111111 !important;
 }
 
+[data-testid="stChatInput"] textarea::placeholder,
 [data-testid="stChatInput"] input::placeholder {
-    font-size: 26px !important;
-    font-weight: 700 !important;
+    font-size: 30px !important;
+    font-weight: 900 !important;
     color: #777777 !important;
 }
 </style>
