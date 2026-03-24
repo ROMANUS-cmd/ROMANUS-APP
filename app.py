@@ -15,7 +15,7 @@ st.markdown("""
     left: 0;
     width: 100%;
     background: white;
-    padding: 65px 20px;
+    padding: 90px 20px;
     z-index: 9999;
     border-bottom: 1px solid #eee;
 }
