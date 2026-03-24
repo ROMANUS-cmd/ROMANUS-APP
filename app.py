@@ -57,17 +57,22 @@ hr {
     padding-bottom: 2rem !important;
 }
 [data-testid="stChatInput"] textarea,
-[data-testid="stChatInput"] input {
-    font-size: 30px !important;
+[data-testid="stChatInput"] input,
+[data-testid="stChatInput"] div[contenteditable="true"] {
+    font-size: 32px !important;
     font-weight: 900 !important;
+    line-height: 1.2 !important;
     color: #111111 !important;
+    -webkit-text-fill-color: #111111 !important;
 }
 
 [data-testid="stChatInput"] textarea::placeholder,
-[data-testid="stChatInput"] input::placeholder {
-    font-size: 30px !important;
+[data-testid="stChatInput"] input::placeholder,
+[data-testid="stChatInput"] div[contenteditable="true"]::placeholder {
+    font-size: 32px !important;
     font-weight: 900 !important;
     color: #777777 !important;
+    -webkit-text-fill-color: #777777 !important;
 }
 </style>
 
