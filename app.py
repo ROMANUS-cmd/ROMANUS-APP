@@ -187,6 +187,12 @@ for item in st.session_state.historico:
         st.markdown(item["texto"])
 
 st.markdown("</div>", unsafe_allow_html=True)
+
+pergunta = st.chat_input("Pergunte à ROMANUS...")
+st.markdown("</div>", unsafe_allow_html=True)
+
+pergunta = st.chat_input("Pergunte à ROMANUS...")
+
 imagem = None
 
 with st.expander("📷 Enviar imagem", expanded=False):
@@ -199,7 +205,34 @@ with st.expander("📷 Enviar imagem", expanded=False):
         imagem = Image.open(uploaded_file)
         st.image(imagem, caption="Imagem enviada", use_container_width=True)
 
-pergunta = st.chat_input("Pergunte à ROMANUS...")
+if pergunta:
+    pergunta = pergunta.strip()
+
+    if pergunta:
+        st.session_state.historico.append({"tipo": "usuario", "texto": pergunta})
+
+        with st.chat_message("user"):
+            st.markdown(pergunta)
+
+        texto_resposta = gerar_resposta(pergunta, imagem)
+
+        st.session_state.historico.append({"tipo": "ia", "texto": texto_resposta})
+
+        with st.chat_message("assistant"):
+            st.markdown(texto_resposta)
+
+        st.markdown("""
+        <script>
+        function scrollToBottom() {
+            window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        window.addEventListener("load", scrollToBottom);
+        setTimeout(scrollToBottom, 200);
+        setTimeout(scrollToBottom, 600);
+        setTimeout(scrollToBottom, 1000);
+        </script>
+        """, unsafe_allow_html=True)
 
 if pergunta:
     pergunta = pergunta.strip()
