@@ -8,17 +8,6 @@ api_key = st.secrets["GEMINI_API_KEY"]
 client = genai.Client(api_key=api_key)
 
 st.markdown("""
-/* FIXAR BARRA ENVIAR IMAGEM */
-section[data-testid="stExpander"] {
-    position: fixed !important;
-    top: 80px !important;
-    left: 0 !important;
-    width: 100% !important;
-    background: white !important;
-    z-index: 9998 !important;
-    padding: 5px 20px !important;
-    border-bottom: 1px solid #eee;
-}
 <style>
 .topo-romanus {
     position: fixed;
