@@ -33,7 +33,7 @@ st.markdown("""
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
-    margin-top: 130px;
+    margin-top: 8px;
 }
 
 hr {
