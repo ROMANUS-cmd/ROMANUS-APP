@@ -65,6 +65,10 @@ st.markdown("""
     margin-top: 10px;
 }
 
+hr {
+    display: none !important;
+}
+
 [data-testid="stHeader"] {
     background: white !important;
     box-shadow: none !important;
@@ -75,14 +79,11 @@ st.markdown("""
     padding-bottom: 4rem !important;
 }
 </style>
-""", unsafe_allow_html=True)
-</style>
 
 <div class="topo-romanus">
     <h1>ROMANUS</h1>
 </div>
 """, unsafe_allow_html=True)
-
 prompt_base = """
 Você é ROMANUS, uma IA de respostas diretas, técnicas e objetivas.
 
