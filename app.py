@@ -86,6 +86,95 @@ def buscar_na_base(pergunta, top_k=3):
 
 
 def montar_contexto_base(pergunta):
+    [17:13, 25/03/2026] André Romano: def gerar_resposta(pergunta: str, imagem=None) -> str:
+    pergunta = pergunta.strip()
+
+    if not pergunta:
+        return "Escreva uma pergunta."
+
+    contexto_base = montar_contexto_base(pergunta)
+
+    if contexto_base:
+        pergunta_final = f"""
+{prompt_base}
+
+Use prioritariamente a base interna da ROMANUS abaixo.
+Se houver base interna suficiente, responda com fundamento nela.
+Se não houver base suficiente, deixe isso claro e só complemente com conhecimento geral sem inventar norma.
+
+BASE INTERNA ENCONTRADA:
+{contexto_base}
+
+PERGUNTA DO USUÁRIO:
+{pergunta}
+"""
+    else:
+        pergunta_final = f"""
+{prompt_base}
+
+Não foi localizado conteúdo suficiente na base interna da ROMANUS para esta pergunta.
+Responda com cautela.
+Não invente artigo, item, inciso, número de norma ou fundamento.
+
+PERGUNTA DO USUÁRIO:
+{pergunta}
+"""
+
+    try:
+        if imagem is not None:
+            resposta = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[pergunta_final, imagem],
+            )
+        else:
+            resposta = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=pergunta_final,
+            )
+
+        texto = getattr(resposta, "text", None)
+        if texto and texto.strip():
+            return texto.strip()
+
+        return "Sem resposta no momento."
+    except Exception as e:
+        return f"Erro ao consultar o modelo: {e}"
+[17:23, 25/03/2026] André Romano: def usuario_pediu_gemini(pergunta):
+    gatilhos = [
+        "use o gemini",
+        "consultar gemini",
+        "pesquise na internet",
+        "pesquisar na internet",
+        "busque na internet",
+        "complemente",
+        "complementar com internet",
+        "resposta com internet",
+    ]
+    pergunta_lower = pergunta.lower()
+    return any(gatilho in pergunta_lower for gatilho in gatilhos)
+
+
+def responder_somente_com_base(pergunta):
+    resultados = buscar_na_base(pergunta, top_k=3)
+
+    if not resultados:
+        return "Não localizei base suficiente nos arquivos internos da ROMANUS para responder com segurança."
+
+    partes = ["Base interna consultada:"]
+    for item in resultados:
+        partes.append(f"- {item['arquivo']}")
+
+    partes.append("\nTrechos localizados:\n")
+
+    for item in resultados:
+        trecho = item["texto"][:2000] if item["texto"] else ""
+        partes.append(
+            f"Arquivo: {item['arquivo']}\n"
+            f"Tipo: {item['tipo']}\n"
+            f"{trecho}\n"
+        )
+
+    return "\n\n".join(partes)
     resultados = buscar_na_base(pergunta, top_k=3)
 
     if not resultados:
