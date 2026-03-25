@@ -9,6 +9,80 @@ st.set_page_config(page_title="ROMANUS", layout="wide")
 
 api_key = st.secrets["GEMINI_API_KEY"]
 client = genai.Client(api_key=api_key)
+BASE_CONHECIMENTO_DIR = "base_conhecimento"
+PASTA_LEGISLACAO = os.path.join(BASE_CONHECIMENTO_DIR, "legislacao_sp")
+PASTA_ITS = os.path.join(BASE_CONHECIMENTO_DIR, "its_sp")
+
+
+def extrair_texto_pdf(caminho_arquivo):
+    try:
+        reader = PdfReader(caminho_arquivo)
+        paginas = []
+        for pagina in reader.pages:
+            texto = pagina.extract_text()
+            if texto:
+                paginas.append(texto)
+        return "\n".join(paginas)
+    except Exception:
+        return ""
+
+
+@st.cache_data
+def carregar_base_local():
+    base = []
+
+    pastas = [
+        ("legislacao_sp", PASTA_LEGISLACAO),
+        ("its_sp", PASTA_ITS),
+    ]
+
+    for tipo, pasta in pastas:
+        if not os.path.exists(pasta):
+            continue
+
+        for nome_arquivo in os.listdir(pasta):
+            if nome_arquivo.lower().endswith(".pdf"):
+                caminho = os.path.join(pasta, nome_arquivo)
+                texto = extrair_texto_pdf(caminho)
+
+                base.append({
+                    "tipo": tipo,
+                    "arquivo": nome_arquivo,
+                    "caminho": caminho,
+                    "texto": texto,
+                    "texto_lower": texto.lower()
+                })
+
+    return base
+
+
+def buscar_na_base(pergunta, top_k=3):
+    base = carregar_base_local()
+    pergunta_lower = pergunta.lower()
+    termos = re.findall(r"\w+", pergunta_lower)
+
+    resultados = []
+
+    for item in base:
+        score = 0
+
+        for termo in termos:
+            if len(termo) < 3:
+                continue
+
+            score += item["arquivo"].lower().count(termo) * 5
+            score += item["texto_lower"].count(termo)
+
+        if score > 0:
+            resultados.append({
+                "score": score,
+                "tipo": item["tipo"],
+                "arquivo": item["arquivo"],
+                "texto": item["texto"]
+            })
+
+    resultados.sort(key=lambda x: x["score"], reverse=True)
+    return resultados[:top_k]
 
 st.markdown("""
 <style>
