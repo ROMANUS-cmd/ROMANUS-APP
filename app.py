@@ -55,11 +55,22 @@ def carregar_base_local():
 
     return base
 
-
 def buscar_na_base(pergunta, top_k=3):
     base = carregar_base_local()
-    pergunta_lower = pergunta.lower()
-    termos = re.findall(r"\w+", pergunta_lower)
+    pergunta_lower = pergunta.lower().strip()
+
+    palavras_ignoradas = {
+        "oi", "ola", "olá", "bom", "boa", "tarde", "dia", "noite",
+        "obrigado", "obrigada", "valeu", "ok", "certo", "entendi"
+    }
+
+    termos = [
+        t for t in re.findall(r"\w+", pergunta_lower)
+        if len(t) >= 4 and t not in palavras_ignoradas
+    ]
+
+    if not termos:
+        return []
 
     resultados = []
 
@@ -67,13 +78,10 @@ def buscar_na_base(pergunta, top_k=3):
         score = 0
 
         for termo in termos:
-            if len(termo) < 3:
-                continue
-
-            score += item["arquivo"].lower().count(termo) * 5
+            score += item["arquivo"].lower().count(termo) * 10
             score += item["texto_lower"].count(termo)
 
-        if score > 0:
+        if score >= 3:
             resultados.append({
                 "score": score,
                 "tipo": item["tipo"],
@@ -83,7 +91,6 @@ def buscar_na_base(pergunta, top_k=3):
 
     resultados.sort(key=lambda x: x["score"], reverse=True)
     return resultados[:top_k]
-
 
 def montar_contexto_base(pergunta):
    def gerar_resposta(pergunta: str, imagem=None) -> str:
