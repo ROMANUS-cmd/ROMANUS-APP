@@ -86,7 +86,7 @@ def buscar_na_base(pergunta, top_k=3):
 
 
 def montar_contexto_base(pergunta):
-    [17:13, 25/03/2026] André Romano: def gerar_resposta(pergunta: str, imagem=None) -> str:
+   def gerar_resposta(pergunta: str, imagem=None) -> str:
     pergunta = pergunta.strip()
 
     if not pergunta:
