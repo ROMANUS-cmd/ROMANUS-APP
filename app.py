@@ -56,6 +56,11 @@ hr {
 [data-testid="stChatInput"] textarea::placeholder {
     font-size: 22px !important;
 }
+
+.stChatMessage p,
+.stChatMessage div {
+    font-size: 28px !important;
+}
 </style>
 
 <div class="topo-romanus">
