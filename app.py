@@ -57,22 +57,6 @@ def carregar_base_local():
 
 
 def buscar_na_base(pergunta, top_k=3):
-    def montar_contexto_base(pergunta):
-    resultados = buscar_na_base(pergunta, top_k=3)
-
-    if not resultados:
-        return ""
-
-    partes = []
-    for item in resultados:
-        trecho = item["texto"][:4000] if item["texto"] else ""
-        partes.append(
-            f"ARQUIVO: {item['arquivo']}\n"
-            f"TIPO: {item['tipo']}\n"
-            f"TRECHO:\n{trecho}\n"
-        )
-
-    return "\n\n".join(partes)
     base = carregar_base_local()
     pergunta_lower = pergunta.lower()
     termos = re.findall(r"\w+", pergunta_lower)
@@ -99,6 +83,24 @@ def buscar_na_base(pergunta, top_k=3):
 
     resultados.sort(key=lambda x: x["score"], reverse=True)
     return resultados[:top_k]
+
+
+def montar_contexto_base(pergunta):
+    resultados = buscar_na_base(pergunta, top_k=3)
+
+    if not resultados:
+        return ""
+
+    partes = []
+    for item in resultados:
+        trecho = item["texto"][:4000] if item["texto"] else ""
+        partes.append(
+            f"ARQUIVO: {item['arquivo']}\n"
+            f"TIPO: {item['tipo']}\n"
+            f"TRECHO:\n{trecho}\n"
+        )
+
+    return "\n\n".join(partes)
 
 st.markdown("""
 <style>
