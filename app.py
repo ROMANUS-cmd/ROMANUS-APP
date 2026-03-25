@@ -1,6 +1,9 @@
 import streamlit as st
 from google import genai
 from PIL import Image
+import os
+import re
+from pypdf import PdfReader
 
 st.set_page_config(page_title="ROMANUS", layout="wide")
 
