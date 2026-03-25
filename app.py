@@ -346,15 +346,34 @@ def gerar_resposta(pergunta: str, imagem=None) -> str:
     if not pergunta:
         return "Escreva uma pergunta."
 
+    resultados_base = buscar_na_base(pergunta, top_k=3)
+    pediu_gemini = usuario_pediu_gemini(pergunta)
+
+    # Se houver imagem, ainda precisa do Gemini
+    if imagem is not None:
+        pediu_gemini = True
+
+    # Regra principal:
+    # Se achou base suficiente e o usuário NÃO pediu Gemini, responde só com a base
+    if resultados_base and not pediu_gemini:
+        return responder_somente_com_base(pergunta)
+
+    # Se não achou base suficiente e o usuário também não pediu Gemini
+    if not resultados_base and not pediu_gemini:
+        return (
+            "Não localizei base suficiente nos arquivos internos da ROMANUS. "
+            "Se quiser, peça explicitamente para usar o Gemini ou pesquisar na internet."
+        )
+
+    # Só chega aqui se o usuário pediu Gemini explicitamente
     contexto_base = montar_contexto_base(pergunta)
 
     if contexto_base:
         pergunta_final = f"""
 {prompt_base}
 
-Use prioritariamente a base interna da ROMANUS abaixo.
-Se houver base interna suficiente, responda com fundamento nela.
-Se não houver base suficiente, deixe isso claro e só complemente com conhecimento geral sem inventar norma.
+Use a base interna da ROMANUS abaixo como prioridade.
+Só complemente com conhecimento geral porque o usuário pediu isso explicitamente.
 
 BASE INTERNA ENCONTRADA:
 {contexto_base}
@@ -366,9 +385,9 @@ PERGUNTA DO USUÁRIO:
         pergunta_final = f"""
 {prompt_base}
 
-Não foi localizado conteúdo suficiente na base interna da ROMANUS para esta pergunta.
-Responda com cautela.
-Não invente artigo, item, inciso, número de norma ou fundamento.
+O usuário pediu uso do Gemini/Internet explicitamente.
+Não foi localizada base interna suficiente.
+Não invente norma, artigo, item ou fundamento.
 
 PERGUNTA DO USUÁRIO:
 {pergunta}
@@ -392,7 +411,7 @@ PERGUNTA DO USUÁRIO:
 
         return "Sem resposta no momento."
     except Exception as e:
-        return f"Erro ao consultar o modelo: {e}"
+        return f"Erro ao consultar o Gemini: {e}"
 
 st.markdown('<div class="bloco-chat">', unsafe_allow_html=True)
 
