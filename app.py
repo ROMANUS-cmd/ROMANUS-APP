@@ -19,7 +19,6 @@ st.markdown("""
     z-index: 9999;
     border-bottom: 1px solid #eee;
 }
-}
 
 .topo-romanus h1 {
     margin: 0;
@@ -48,6 +47,14 @@ hr {
 .main .block-container {
     padding-top: 0rem !important;
     padding-bottom: 4rem !important;
+}
+
+[data-testid="stChatInput"] textarea {
+    font-size: 22px !important;
+}
+
+[data-testid="stChatInput"] textarea::placeholder {
+    font-size: 22px !important;
 }
 </style>
 
