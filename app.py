@@ -251,26 +251,50 @@ if "historico" not in st.session_state:
 if "pergunta" not in st.session_state:
     st.session_state.pergunta = ""
 
-
 def gerar_resposta(pergunta: str, imagem=None) -> str:
     pergunta = pergunta.strip()
 
     if not pergunta:
         return "Escreva uma pergunta."
 
-    if "internet" in pergunta.lower() or "pesquisa" in pergunta.lower():
-        return "Sim. Respondo com base em critérios técnicos, hierarquia normativa e confirmação complementar por fontes confiáveis da internet."
+    contexto_base = montar_contexto_base(pergunta)
+
+    if contexto_base:
+        pergunta_final = f"""
+{prompt_base}
+
+Use prioritariamente a base interna da ROMANUS abaixo.
+Se houver base interna suficiente, responda com fundamento nela.
+Se não houver base suficiente, deixe isso claro e só complemente com conhecimento geral sem inventar norma.
+
+BASE INTERNA ENCONTRADA:
+{contexto_base}
+
+PERGUNTA DO USUÁRIO:
+{pergunta}
+"""
+    else:
+        pergunta_final = f"""
+{prompt_base}
+
+Não foi localizado conteúdo suficiente na base interna da ROMANUS para esta pergunta.
+Responda com cautela.
+Não invente artigo, item, inciso, número de norma ou fundamento.
+
+PERGUNTA DO USUÁRIO:
+{pergunta}
+"""
 
     try:
         if imagem is not None:
             resposta = client.models.generate_content(
                 model="gemini-2.5-flash",
-                contents=[f"{prompt_base}\n\nPergunta do usuário: {pergunta}", imagem],
+                contents=[pergunta_final, imagem],
             )
         else:
             resposta = client.models.generate_content(
                 model="gemini-2.5-flash",
-                contents=f"{prompt_base}\n\nPergunta do usuário: {pergunta}",
+                contents=pergunta_final,
             )
 
         texto = getattr(resposta, "text", None)
@@ -278,9 +302,8 @@ def gerar_resposta(pergunta: str, imagem=None) -> str:
             return texto.strip()
 
         return "Sem resposta no momento."
-    except Exception:
-        return "Erro ao consultar o modelo. Verifique a chave da API, os logs e tente novamente."
-
+    except Exception as e:
+        return f"Erro ao consultar o modelo: {e}"
 
 st.markdown('<div class="bloco-chat">', unsafe_allow_html=True)
 
