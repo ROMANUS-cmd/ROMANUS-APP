@@ -139,7 +139,7 @@ PERGUNTA DO USUÁRIO:
         return "Sem resposta no momento."
     except Exception as e:
         return f"Erro ao consultar o modelo: {e}"
-[17:23, 25/03/2026] André Romano: def usuario_pediu_gemini(pergunta):
+def usuario_pediu_gemini(pergunta):
     gatilhos = [
         "use o gemini",
         "consultar gemini",
