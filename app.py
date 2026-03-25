@@ -160,43 +160,45 @@ def usuario_pediu_gemini(pergunta):
     pergunta_lower = pergunta.lower()
     return any(gatilho in pergunta_lower for gatilho in gatilhos)
 
-
 def responder_somente_com_base(pergunta):
     resultados = buscar_na_base(pergunta, top_k=3)
 
     if not resultados:
         return "Não localizei base suficiente nos arquivos internos da ROMANUS para responder com segurança."
 
-    partes = ["Base interna consultada:"]
-    for item in resultados:
-        partes.append(f"- {item['arquivo']}")
+    item = resultados[0]
+    texto = item["texto"] if item["texto"] else ""
 
-    partes.append("\nTrechos localizados:\n")
+    termos = [t for t in re.findall(r"\w+", pergunta.lower()) if len(t) >= 4]
 
-    for item in resultados:
-        trecho = item["texto"][:2000] if item["texto"] else ""
-        partes.append(
-            f"Arquivo: {item['arquivo']}\n"
-            f"Tipo: {item['tipo']}\n"
-            f"{trecho}\n"
-        )
+    trechos = re.split(r'(?<=[\.\n])', texto)
+    melhores_trechos = []
 
-    return "\n\n".join(partes)
-    resultados = buscar_na_base(pergunta, top_k=3)
+    for trecho in trechos:
+        score = 0
+        trecho_lower = trecho.lower()
+        for termo in termos:
+            score += trecho_lower.count(termo)
+        if score > 0:
+            melhores_trechos.append((score, trecho.strip()))
 
-    if not resultados:
-        return ""
+    melhores_trechos.sort(key=lambda x: x[0], reverse=True)
+    trechos_escolhidos = [t[1] for t in melhores_trechos[:2] if t[1]]
 
-    partes = []
-    for item in resultados:
-        trecho = item["texto"][:4000] if item["texto"] else ""
-        partes.append(
-            f"ARQUIVO: {item['arquivo']}\n"
-            f"TIPO: {item['tipo']}\n"
-            f"TRECHO:\n{trecho}\n"
-        )
+    fundamento = " ".join(trechos_escolhidos).strip()
 
-    return "\n\n".join(partes)
+    if not fundamento:
+        fundamento = texto[:800].strip()
+
+    resposta = (
+        f"Resposta objetiva: com base no arquivo {item['arquivo']}, este é o fundamento mais relevante para a pergunta.\n"
+        f"Fundamento localizado: {fundamento}\n"
+        f"Base consultada: {item['arquivo']}\n"
+        f"Conclusão prática: resposta extraída diretamente da base interna da ROMANUS."
+    )
+
+    linhas = [linha.strip() for linha in resposta.splitlines() if linha.strip()]
+    return "\n".join(linhas[:12])
 
 st.markdown("""
 <style>
