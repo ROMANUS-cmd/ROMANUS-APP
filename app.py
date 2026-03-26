@@ -161,7 +161,7 @@ def responder_somente_com_base(pergunta):
     try:
         # Chamamos o Gemini para organizar a extração limpa (2.0-flash é ideal)
         resposta_extracao = client.models.generate_content(
-            model="gemini-2.0-flash", 
+            model="gemini-1.5-flash", 
             contents=prompt_extracao,
         )
         texto_extraido = resposta_extracao.text if resposta_extracao.text else "Sem resposta."
