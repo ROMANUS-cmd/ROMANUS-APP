@@ -158,8 +158,8 @@ def responder_somente_com_base(pergunta):
     {texto_pdf_raw[:18000]}
     """
     
-    try:
-                           resposta_extracao = client.models.generate_content(
+        try:
+        resposta_extracao = client.models.generate_content(
             model="gemini-1.5-flash",
             contents=prompt_extracao,
         )
@@ -169,6 +169,7 @@ def responder_somente_com_base(pergunta):
 
     except Exception as e:
         return f"Erro processando extração literal: {e}"
+
 
 # --- Funções Auxiliares de Saudações e Internet ---
 def eh_saudacao(pergunta):
