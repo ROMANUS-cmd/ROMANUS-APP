@@ -343,6 +343,20 @@ if "historico" not in st.session_state:
 if "pergunta" not in st.session_state:
     st.session_state.pergunta = ""
 
+def pergunta_eh_normativa(pergunta):
+    p = pergunta.lower().strip()
+
+    gatilhos = [
+        "it ", "it-", "instrução técnica", "instrucao tecnica",
+        "lei", "decreto", "artigo", "art.", "item", "inciso",
+        "norma", "regulamento", "avcb", "clcb", "cbpmesp",
+        "bombeiro", "extintor", "hidrante", "mangotinho",
+        "rota de fuga", "saída de emergência", "saida de emergencia",
+        "detecção", "deteccao", "alarme", "sprinkler",
+        "líquido inflamável", "liquido inflamavel", "combustível", "combustivel"
+    ]
+
+    return any(g in p for g in gatilhos)
 def gerar_resposta(pergunta: str, imagem=None) -> str:
     pergunta = pergunta.strip()
 
