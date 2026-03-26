@@ -282,6 +282,64 @@ def pergunta_pede_so_localizacao(pergunta):
     ]
 
     return any(g in p for g in gatilhos)
+    def extrair_bloco_por_dispositivo(texto, pergunta):
+    if not texto or not pergunta:
+        return None
+
+    pergunta_lower = pergunta.lower()
+
+    # Procura artigo citado explicitamente na pergunta: ex. "artigo 20", "art. 20"
+    m_art = re.search(r'\bart(?:igo)?\.?\s*(\d{1,3})\b', pergunta_lower)
+    if m_art:
+        numero = m_art.group(1)
+        padrao = re.compile(
+            rf'(art(?:igo)?\.?\s*{numero}\b.*?)(?=\bart(?:igo)?\.?\s*\d+\b|$)',
+            re.IGNORECASE | re.DOTALL
+        )
+        achou = padrao.search(texto)
+        if achou:
+            return achou.group(1).strip()
+
+    # Procura item citado explicitamente na pergunta: ex. "item 4.5.4.6"
+    m_item = re.search(r'\bitem\s*(\d+(?:\.\d+)*)\b', pergunta_lower)
+    if m_item:
+        numero = re.escape(m_item.group(1))
+        padrao = re.compile(
+            rf'(item\s*{numero}\b.*?)(?=\bitem\s*\d+(?:\.\d+)*\b|$)',
+            re.IGNORECASE | re.DOTALL
+        )
+        achou = padrao.search(texto)
+        if achou:
+            return achou.group(1).strip()
+
+    # Se a pergunta pedir "qual artigo" sem número, tenta achar artigo com o tema
+    if "artigo" in pergunta_lower or "art." in pergunta_lower:
+        padrao_artigos = re.finditer(
+            r'(art(?:igo)?\.?\s*\d+\b.*?)(?=\bart(?:igo)?\.?\s*\d+\b|$)',
+            texto,
+            re.IGNORECASE | re.DOTALL
+        )
+
+        termos = normalizar_termos_busca(pergunta)
+        melhor_bloco = None
+        melhor_score = 0
+
+        for achou in padrao_artigos:
+            bloco = achou.group(1).strip()
+            bloco_lower = bloco.lower()
+            score = 0
+
+            for termo in termos:
+                score += bloco_lower.count(termo) * 4
+
+            if score > melhor_score:
+                melhor_score = score
+                melhor_bloco = bloco
+
+        if melhor_bloco:
+            return melhor_bloco
+
+    return None
 def responder_somente_com_base(pergunta):
     item_especifico = localizar_arquivo_especifico(pergunta)
 
