@@ -61,7 +61,10 @@ def buscar_na_base(pergunta, top_k=3):
 
     palavras_ignoradas = {
         "oi", "ola", "olá", "bom", "boa", "tarde", "dia", "noite",
-        "obrigado", "obrigada", "valeu", "ok", "certo", "entendi"
+        "obrigado", "obrigada", "valeu", "ok", "certo", "entendi",
+        "qual", "quais", "como", "onde", "quando", "sobre", "para",
+        "isso", "essa", "esse", "uma", "uns", "umas", "dos", "das",
+        "com", "sem", "por", "que"
     }
 
     termos = [
@@ -76,12 +79,14 @@ def buscar_na_base(pergunta, top_k=3):
 
     for item in base:
         score = 0
+        arquivo_lower = item["arquivo"].lower()
+        texto_lower = item["texto_lower"]
 
         for termo in termos:
-            score += item["arquivo"].lower().count(termo) * 10
-            score += item["texto_lower"].count(termo)
+            score += arquivo_lower.count(termo) * 8
+            score += texto_lower.count(termo) * 2
 
-        if score >= 3:
+        if score >= 10:
             resultados.append({
                 "score": score,
                 "tipo": item["tipo"],
@@ -91,7 +96,6 @@ def buscar_na_base(pergunta, top_k=3):
 
     resultados.sort(key=lambda x: x["score"], reverse=True)
     return resultados[:top_k]
-
 def eh_saudacao(pergunta):
     pergunta = pergunta.lower().strip()
     saudacoes = {
