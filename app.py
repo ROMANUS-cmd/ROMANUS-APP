@@ -167,31 +167,33 @@ def responder_somente_com_base(pergunta):
     melhores_trechos = []
 
     for trecho in trechos:
+        trecho = trecho.strip()
+        if not trecho:
+            continue
+
         score = 0
         trecho_lower = trecho.lower()
         for termo in termos:
             score += trecho_lower.count(termo)
+
         if score > 0:
-            melhores_trechos.append((score, trecho.strip()))
+            melhores_trechos.append((score, trecho))
 
     melhores_trechos.sort(key=lambda x: x[0], reverse=True)
-    trechos_escolhidos = [t[1] for t in melhores_trechos[:2] if t[1]]
+    trechos_escolhidos = [t[1] for t in melhores_trechos[:2]]
 
     fundamento = " ".join(trechos_escolhidos).strip()
 
     if not fundamento:
-        fundamento = texto[:800].strip()
+        fundamento = texto[:700].strip()
 
     resposta = (
-        f"Resposta objetiva: com base no arquivo {item['arquivo']}, este é o fundamento mais relevante para a pergunta.\n"
-        f"Fundamento localizado: {fundamento}\n"
-        f"Base consultada: {item['arquivo']}\n"
-        f"Conclusão prática: resposta extraída diretamente da base interna da ROMANUS."
+        f"Resposta objetiva: encontrei fundamento na base interna.\n\n"
+        f"Fundamento: {fundamento}\n\n"
+        f"Conclusão prática: a resposta foi extraída diretamente da base interna da ROMANUS."
     )
 
-    linhas = [linha.strip() for linha in resposta.splitlines() if linha.strip()]
-    return "\n".join(linhas[:12])
-
+    return resposta[:1200]
 st.markdown("""
 <style>
 .topo-romanus {
