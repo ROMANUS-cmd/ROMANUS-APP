@@ -92,60 +92,48 @@ def buscar_na_base(pergunta, top_k=3):
     resultados.sort(key=lambda x: x["score"], reverse=True)
     return resultados[:top_k]
 
+def eh_saudacao(pergunta):
+    pergunta = pergunta.lower().strip()
+    saudacoes = {
+        "oi", "ola", "olá", "bom dia", "boa tarde", "boa noite",
+        "obrigado", "obrigada", "valeu"
+    }
+    return pergunta in saudacoes
+
+
+def responder_saudacao(pergunta):
+    pergunta = pergunta.lower().strip()
+
+    if pergunta in {"oi", "ola", "olá"}:
+        return "Olá. Pronta para operação."
+    elif pergunta == "bom dia":
+        return "Bom dia. Pronta para operação."
+    elif pergunta == "boa tarde":
+        return "Boa tarde. Pronta para operação."
+    elif pergunta == "boa noite":
+        return "Boa noite. Pronta para operação."
+    elif pergunta in {"obrigado", "obrigada", "valeu"}:
+        return "À disposição."
+
+    return "Pronta para operação."
+
+
 def montar_contexto_base(pergunta):
-   def gerar_resposta(pergunta: str, imagem=None) -> str:
-    pergunta = pergunta.strip()
+    resultados = buscar_na_base(pergunta, top_k=3)
 
-    if not pergunta:
-        return "Escreva uma pergunta."
+    if not resultados:
+        return ""
 
-    contexto_base = montar_contexto_base(pergunta)
+    blocos = []
+    for item in resultados:
+        texto = item["texto"][:2000].strip()
+        blocos.append(
+            f"ARQUIVO: {item['arquivo']}\n"
+            f"SCORE: {item['score']}\n"
+            f"TRECHO:\n{texto}"
+        )
 
-    if contexto_base:
-        pergunta_final = f"""
-{prompt_base}
-
-Use prioritariamente a base interna da ROMANUS abaixo.
-Se houver base interna suficiente, responda com fundamento nela.
-Se não houver base suficiente, deixe isso claro e só complemente com conhecimento geral sem inventar norma.
-
-BASE INTERNA ENCONTRADA:
-{contexto_base}
-
-PERGUNTA DO USUÁRIO:
-{pergunta}
-"""
-    else:
-        pergunta_final = f"""
-{prompt_base}
-
-Não foi localizado conteúdo suficiente na base interna da ROMANUS para esta pergunta.
-Responda com cautela.
-Não invente artigo, item, inciso, número de norma ou fundamento.
-
-PERGUNTA DO USUÁRIO:
-{pergunta}
-"""
-
-    try:
-        if imagem is not None:
-            resposta = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[pergunta_final, imagem],
-            )
-        else:
-            resposta = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=pergunta_final,
-            )
-
-        texto = getattr(resposta, "text", None)
-        if texto and texto.strip():
-            return texto.strip()
-
-        return "Sem resposta no momento."
-    except Exception as e:
-        return f"Erro ao consultar o modelo: {e}"
+    return "\n\n---\n\n".join(blocos)
 def usuario_pediu_gemini(pergunta):
     gatilhos = [
         "use o gemini",
