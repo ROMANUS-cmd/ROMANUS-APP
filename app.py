@@ -237,16 +237,16 @@ hr {
 }
 
 [data-testid="stChatInput"] textarea {
-    font-size: 22px !important;
+    font-size: 18px !important;
 }
 
 [data-testid="stChatInput"] textarea::placeholder {
-    font-size: 22px !important;
+    font-size: 18px !important;
 }
 
 .stChatMessage p,
 .stChatMessage div {
-    font-size: 28px !important;
+    font-size: 22px !important;
 }
 </style>
 
