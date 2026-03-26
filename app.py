@@ -266,6 +266,7 @@ def pergunta_pede_so_localizacao(pergunta):
     gatilhos = [
         "qual it fala sobre",
         "qual it trata de",
+        "qual it é",
         "qual norma fala sobre",
         "qual norma trata de",
         "qual instrução técnica fala sobre",
@@ -274,6 +275,10 @@ def pergunta_pede_so_localizacao(pergunta):
         "em qual norma está",
         "qual arquivo fala sobre",
         "qual arquivo trata de",
+        "que it fala sobre",
+        "que it trata de",
+        "que norma fala sobre",
+        "que norma trata de",
     ]
 
     return any(g in p for g in gatilhos)
