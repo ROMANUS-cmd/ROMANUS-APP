@@ -152,6 +152,28 @@ def usuario_pediu_gemini(pergunta):
     pergunta_lower = pergunta.lower()
     return any(gatilho in pergunta_lower for gatilho in gatilhos)
 
+def localizar_arquivo_especifico(pergunta):
+    pergunta_lower = pergunta.lower()
+
+    padrao_it = re.search(r'it\s*(\d{1,2})\s*[/\-]?\s*(\d{2,4})?', pergunta_lower)
+    if not padrao_it:
+        padrao_it = re.search(r'instrução técnica\s*(\d{1,2})\s*[/\-]?\s*(\d{2,4})?', pergunta_lower)
+
+    if not padrao_it:
+        padrao_it = re.search(r'instrucao tecnica\s*(\d{1,2})\s*[/\-]?\s*(\d{2,4})?', pergunta_lower)
+
+    if not padrao_it:
+        return None
+
+    numero_it = padrao_it.group(1)
+
+    base = carregar_base_local()
+    for item in base:
+        nome = item["arquivo"].lower()
+        if f"it {numero_it}" in nome or f"it_{numero_it}" in nome or f"it-{numero_it}" in nome or f"{numero_it}-" in nome:
+            return item
+
+    return None
 def responder_somente_com_base(pergunta):
     resultados = buscar_na_base(pergunta, top_k=3)
 
