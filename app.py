@@ -340,6 +340,13 @@ def pergunta_pede_so_localizacao(pergunta):
             return melhor_bloco
 
     return None
+                melhor_score = score
+                melhor_bloco = bloco
+
+        if melhor_bloco:
+            return melhor_bloco
+
+    return None
 def responder_somente_com_base(pergunta):
     item_especifico = localizar_arquivo_especifico(pergunta)
 
