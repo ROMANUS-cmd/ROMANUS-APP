@@ -233,7 +233,7 @@ hr {
 
 .main .block-container {
     padding-top: 0rem !important;
-    padding-bottom: 4rem !important;
+    padding-bottom: 8rem !important;
 }
 
 [data-testid="stChatInput"] textarea {
