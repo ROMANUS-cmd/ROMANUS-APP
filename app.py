@@ -208,7 +208,6 @@ def responder_somente_com_base(pergunta):
     except Exception as e:
         return f"Erro na extração literal: {e}"
 
-    )
 st.markdown("""
 <style>
 .topo-romanus {
