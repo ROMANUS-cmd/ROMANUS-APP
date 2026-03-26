@@ -297,29 +297,34 @@ def responder_somente_com_base(pergunta):
     if not texto.strip():
         return f"Localizei o arquivo {item['arquivo']}, mas não consegui extrair texto útil do PDF."
 
-    # Se a pergunta for só para identificar qual norma trata do assunto,
-    # responde apenas com o nome do arquivo.
+    # Pergunta só quer saber qual norma/IT trata do assunto
     if pergunta_pede_so_localizacao(pergunta):
         return f"**Arquivo localizado:** {item['arquivo']}"
 
     trechos = extrair_trechos_relevantes(texto, pergunta, limite=2)
 
     if not trechos:
-        trecho_literal = texto[:800].strip()
+        trecho_literal = texto[:500].strip()
         return (
             f"**Arquivo localizado:** {item['arquivo']}\n\n"
             f"**Trecho literal da base:**\n\n"
             f"\"{trecho_literal}\""
         )
 
-    trecho_literal = "\n\n".join([f"\"{t}\"" for t in trechos])
+    trechos_curtos = []
+    for t in trechos:
+        t = t.strip()
+        if len(t) > 500:
+            t = t[:500].rsplit(" ", 1)[0] + "..."
+        trechos_curtos.append(f"\"{t}\"")
+
+    trecho_literal = "\n\n".join(trechos_curtos)
 
     return (
         f"**Arquivo localizado:** {item['arquivo']}\n\n"
         f"**Trecho literal da base:**\n\n"
         f"{trecho_literal}"
     )
-
 # =========================
 # FUNÇÕES AUXILIARES
 # =========================
