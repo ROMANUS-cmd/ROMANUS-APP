@@ -237,7 +237,7 @@ hr {
 }
 
 [data-testid="stChatInput"] textarea {
-    font-size: 12px !important;
+    font-size: 16px !important;
 }
 
 [data-testid="stChatInput"] textarea::placeholder {
