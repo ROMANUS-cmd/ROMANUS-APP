@@ -359,6 +359,18 @@ def responder_somente_com_base(pergunta):
     if pergunta_pede_so_localizacao(pergunta):
         return f"**Arquivo localizado:** {item['arquivo']}"
 
+    # Tenta primeiro localizar artigo/item exato
+    bloco_dispositivo = extrair_bloco_por_dispositivo(texto, pergunta)
+    if bloco_dispositivo:
+        if len(bloco_dispositivo) > 1200:
+            bloco_dispositivo = bloco_dispositivo[:1200].rsplit(" ", 1)[0] + "..."
+        return (
+            f"**Arquivo localizado:** {item['arquivo']}\n\n"
+            f"**Trecho literal da base:**\n\n"
+            f"\"{bloco_dispositivo}\""
+        )
+
+    # Fallback: busca por relevância geral
     trechos = extrair_trechos_relevantes(texto, pergunta, limite=2)
 
     if not trechos:
