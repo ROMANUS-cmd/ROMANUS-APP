@@ -246,7 +246,7 @@ hr {
 
 .stChatMessage p,
 .stChatMessage div {
-    font-size: 18px !important;
+    font-size: 24px !important;
 }
 </style>
 
