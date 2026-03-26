@@ -260,7 +260,23 @@ def montar_contexto_base(pergunta):
 
     return "\n\n---\n\n".join(blocos_contexto)
 
+def pergunta_pede_so_localizacao(pergunta):
+    p = pergunta.lower().strip()
 
+    gatilhos = [
+        "qual it fala sobre",
+        "qual it trata de",
+        "qual norma fala sobre",
+        "qual norma trata de",
+        "qual instrução técnica fala sobre",
+        "qual instrução técnica trata de",
+        "em qual it está",
+        "em qual norma está",
+        "qual arquivo fala sobre",
+        "qual arquivo trata de",
+    ]
+
+    return any(g in p for g in gatilhos)
 def responder_somente_com_base(pergunta):
     item_especifico = localizar_arquivo_especifico(pergunta)
 
