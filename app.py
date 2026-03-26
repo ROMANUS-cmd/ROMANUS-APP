@@ -175,16 +175,21 @@ def localizar_arquivo_especifico(pergunta):
 
     return None
 def responder_somente_com_base(pergunta):
-    resultados = buscar_na_base(pergunta, top_k=3)
+    item_especifico = localizar_arquivo_especifico(pergunta)
 
-    if not resultados:
-        return "Não localizei base suficiente nos arquivos internos da ROMANUS para responder com segurança."
+    if item_especifico:
+        item = item_especifico
+    else:
+        resultados = buscar_na_base(pergunta, top_k=3)
+        if not resultados:
+            return "Não localizei base interna suficiente para responder com segurança."
+        item = resultados[0]
 
-    item = resultados[0]
     texto = item["texto"] if item["texto"] else ""
+    if not texto.strip():
+        return f"Localizei o arquivo {item['arquivo']}, mas não consegui extrair texto útil do PDF."
 
-    termos = [t for t in re.findall(r"\w+", pergunta.lower()) if len(t) >= 4]
-
+    termos = [t for t in re.findall(r"\w+", pergunta.lower()) if len(t) >= 3]
     trechos = re.split(r'(?<=[\.\n])', texto)
     melhores_trechos = []
 
@@ -202,20 +207,18 @@ def responder_somente_com_base(pergunta):
             melhores_trechos.append((score, trecho))
 
     melhores_trechos.sort(key=lambda x: x[0], reverse=True)
-    trechos_escolhidos = [t[1] for t in melhores_trechos[:2]]
+    trechos_escolhidos = [t[1] for t in melhores_trechos[:3]]
 
-    fundamento = " ".join(trechos_escolhidos).strip()
+    if not trechos_escolhidos:
+        trecho_literal = texto[:1000].strip()
+    else:
+        trecho_literal = "\n".join(trechos_escolhidos)
 
-    if not fundamento:
-        fundamento = texto[:700].strip()
-
-    resposta = (
-        f"Resposta objetiva: encontrei fundamento na base interna.\n\n"
-        f"Fundamento: {fundamento}\n\n"
-        f"Conclusão prática: a resposta foi extraída diretamente da base interna da ROMANUS."
+    return (
+        f"Arquivo localizado: {item['arquivo']}\n\n"
+        f"Trecho literal da base:\n"
+        f"\"{trecho_literal}\""
     )
-
-    return resposta[:1200]
 st.markdown("""
 <style>
 .topo-romanus {
