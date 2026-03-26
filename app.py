@@ -176,48 +176,38 @@ def localizar_arquivo_especifico(pergunta):
     return None
 def responder_somente_com_base(pergunta):
     item_especifico = localizar_arquivo_especifico(pergunta)
-
+    
     if item_especifico:
         item = item_especifico
     else:
-        resultados = buscar_na_base(pergunta, top_k=3)
+        resultados = buscar_na_base(pergunta, top_k=1)
         if not resultados:
             return "Não localizei base interna suficiente para responder com segurança."
         item = resultados[0]
 
-    texto = item["texto"] if item["texto"] else ""
-    if not texto.strip():
-        return f"Localizei o arquivo {item['arquivo']}, mas não consegui extrair texto útil do PDF."
+    texto_pdf = item["texto"]
+    
+    # Comando para o modelo extrair o texto fiel do banco de dados
+    prompt_extracao = f"""
+    Baseado no documento {item['arquivo']}, localize e transcreva LITERALMENTE o trecho que responde à pergunta: "{pergunta}".
+    REGRAS:
+    - Cite o número do Item ou Artigo.
+    - Transcreva o parágrafo inteiro pertinente sem alterações.
+    
+    TEXTO PARA PESQUISA:
+    {texto_pdf[:18000]}
+    """
+    
+    try:
+        # Aqui o modelo 2.0-flash processa a extração literal
+        resposta_extracao = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt_extracao,
+        )
+        return f"**Arquivo localizado:** {item['arquivo']}\n\n{resposta_extracao.text}"
+    except Exception as e:
+        return f"Erro na extração literal: {e}"
 
-    termos = [t for t in re.findall(r"\w+", pergunta.lower()) if len(t) >= 3]
-    trechos = re.split(r'(?<=[\.\n])', texto)
-    melhores_trechos = []
-
-    for trecho in trechos:
-        trecho = trecho.strip()
-        if not trecho:
-            continue
-
-        score = 0
-        trecho_lower = trecho.lower()
-        for termo in termos:
-            score += trecho_lower.count(termo)
-
-        if score > 0:
-            melhores_trechos.append((score, trecho))
-
-    melhores_trechos.sort(key=lambda x: x[0], reverse=True)
-    trechos_escolhidos = [t[1] for t in melhores_trechos[:3]]
-
-    if not trechos_escolhidos:
-        trecho_literal = texto[:1000].strip()
-    else:
-        trecho_literal = "\n".join(trechos_escolhidos)
-
-    return (
-        f"Arquivo localizado: {item['arquivo']}\n\n"
-        f"Trecho literal da base:\n"
-        f"\"{trecho_literal}\""
     )
 st.markdown("""
 <style>
