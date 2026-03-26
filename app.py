@@ -159,17 +159,16 @@ def responder_somente_com_base(pergunta):
     """
     
     try:
-           resposta_extracao = client.models.generate_content(
-                    model="gemini-1.5-flash",
-        contents=prompt_extracao,
-    )
-    
-    texto_extraido = resposta_extracao.text if resposta_extracao.text else "Sem resposta."
-    return f"**Arquivo localizado:** {item['arquivo']}\n\n{texto_extraido}"
+                   resposta_extracao = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt_extracao,
+        )
 
-except Exception as e:
-    return f"Erro processando extração literal: {e}"
+        texto_extraido = resposta_extracao.text if resposta_extracao.text else "Sem resposta."
+        return f"**Arquivo localizado:** {item['arquivo']}\n\n{texto_extraido}"
 
+    except Exception as e:
+        return f"Erro processando extração literal: {e}"
 
 # --- Funções Auxiliares de Saudações e Internet ---
 def eh_saudacao(pergunta):
