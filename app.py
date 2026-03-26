@@ -159,7 +159,7 @@ def responder_somente_com_base(pergunta):
     """
     
     try:
-                   resposta_extracao = client.models.generate_content(
+                           resposta_extracao = client.models.generate_content(
             model="gemini-1.5-flash",
             contents=prompt_extracao,
         )
