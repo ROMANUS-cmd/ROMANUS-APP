@@ -366,25 +366,30 @@ def gerar_resposta(pergunta: str, imagem=None) -> str:
     if eh_saudacao(pergunta):
         return responder_saudacao(pergunta)
 
-    resultados_base = buscar_na_base(pergunta, top_k=3)
-    pediu_gemini = usuario_pediu_gemini(pergunta)
-
+    # Imagem sempre vai para o Gemini
     if imagem is not None:
-        pediu_gemini = True
+        try:
+            resposta = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[f"{prompt_base}\n\nPERGUNTA DO USUÁRIO:\n{pergunta}", imagem],
+            )
+            texto = getattr(resposta, "text", None)
+            return texto.strip() if texto and texto.strip() else "Sem resposta no momento."
+        except Exception as e:
+            return f"Erro ao consultar o Gemini: {e}"
 
-    if resultados_base and not pediu_gemini:
-        return responder_somente_com_base(pergunta)
+    # Pergunta normativa/técnica = base local primeiro
+    if pergunta_eh_normativa(pergunta):
+        resultados_base = buscar_na_base(pergunta, top_k=3)
 
-    if not resultados_base and not pediu_gemini:
-        return (
-            "Não localizei base suficiente nos arquivos internos da ROMANUS para responder com segurança. "
-            "Se quiser, peça explicitamente para usar o Gemini ou pesquisar na internet."
-        )
+        if resultados_base:
+            return responder_somente_com_base(pergunta)
 
-    contexto_base = montar_contexto_base(pergunta)
+        if usuario_pediu_gemini(pergunta):
+            contexto_base = montar_contexto_base(pergunta)
 
-    if contexto_base:
-        pergunta_final = f"""
+            if contexto_base:
+                pergunta_final = f"""
 {prompt_base}
 
 Use a base interna da ROMANUS abaixo como prioridade.
@@ -396,8 +401,8 @@ BASE INTERNA ENCONTRADA:
 PERGUNTA DO USUÁRIO:
 {pergunta}
 """
-    else:
-        pergunta_final = f"""
+            else:
+                pergunta_final = f"""
 {prompt_base}
 
 O usuário pediu uso do Gemini/Internet explicitamente.
@@ -408,23 +413,26 @@ PERGUNTA DO USUÁRIO:
 {pergunta}
 """
 
+            try:
+                resposta = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=pergunta_final,
+                )
+                texto = getattr(resposta, "text", None)
+                return texto.strip() if texto and texto.strip() else "Sem resposta no momento."
+            except Exception as e:
+                return f"Erro ao consultar o Gemini: {e}"
+
+        return "Não localizei base interna suficiente para responder com segurança."
+
+    # Pergunta geral = Gemini direto
     try:
-        if imagem is not None:
-            resposta = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[pergunta_final, imagem],
-            )
-        else:
-            resposta = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=pergunta_final,
-            )
-
+        resposta = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=f"{prompt_base}\n\nPERGUNTA DO USUÁRIO:\n{pergunta}",
+        )
         texto = getattr(resposta, "text", None)
-        if texto and texto.strip():
-            return texto.strip()
-
-        return "Sem resposta no momento."
+        return texto.strip() if texto and texto.strip() else "Sem resposta no momento."
     except Exception as e:
         return f"Erro ao consultar o Gemini: {e}"
 st.markdown('<div class="bloco-chat">', unsafe_allow_html=True)
