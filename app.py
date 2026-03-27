@@ -19,11 +19,9 @@ st.set_page_config(
 # =========================================================
 BASE_CONHECIMENTO_DIR = "base_conhecimento"
 ARQUIVOS_SUPORTADOS = (".txt", ".pdf")
-MAX_TRECHO_POR_DOCUMENTO = 2500
-TOP_K = 3
-
-# Troque aqui se quiser outro modelo
 MODELO_GEMINI = "gemini-2.5-flash"
+TOP_K = 5
+JANELA_TRECHO = 2600
 
 # =========================================================
 # PROMPT PRINCIPAL
@@ -69,12 +67,6 @@ Se a pergunta pedir definição, lista, requisitos, medidas, critérios ou class
 - não use sumário, índice, anexo citado sem conteúdo, nota lateral ou referência indireta como base principal;
 - não trate menção genérica como resposta suficiente;
 - se houver apenas menção indireta, diga claramente que a base não trouxe a definição/lista expressa.
-
-EXEMPLO DE CONDUTA CORRETA
-Se o usuário perguntar “quais são as medidas de segurança contra incêndio?”:
-- não basta encontrar uma frase em que “saída de emergência” aparece;
-- é necessário procurar a norma, quadro, anexo ou item que trate da lista ou definição das medidas;
-- se isso não estiver nos trechos localizados, a resposta correta é dizer que a base consultada não trouxe a relação expressa completa.
 
 USO DA BASE LOCAL
 Se o sistema fornecer trechos de documentos:
@@ -130,7 +122,7 @@ A resposta deve ser:
 Evite:
 - frases vagas;
 - respostas genéricas;
-- “depende” sem explicar do que depende;
+- "depende" sem explicar do que depende;
 - enrolação;
 - falsa segurança;
 - usar referência periférica como se fosse fundamento principal.
@@ -142,7 +134,7 @@ RESPOSTA DIRETA:
 [resposta objetiva]
 
 FUNDAMENTO:
-[arquivo consultado]
+[arquivo consultado e artigo/item se localizados]
 
 GRAU DE CERTEZA:
 [expresso na base / conclusão parcial / insuficiente]
@@ -157,6 +149,14 @@ CONDUTA EM PERGUNTAS JURÍDICAS E NORMATIVAS
 - nunca invente artigo;
 - nunca use tom categórico sem base;
 - quando a pergunta pedir um rol, uma lista ou uma definição, só afirme isso se o rol, a lista ou a definição estiver expressamente localizado.
+
+INSTRUÇÃO ESPECIAL PARA ENUMERAÇÕES
+Se a pergunta pedir lista, rol, definição ou enumeração:
+- procure no trecho localizado expressões como:
+  "constituem", "são", "compreendem", "incluem", "fica instituído", "deverá ser levado em consideração", "classificam-se", "são medidas", "são requisitos";
+- se houver enumeração expressa, reproduza a lista fielmente;
+- se houver incisos, preserve a estrutura;
+- se não houver enumeração expressa, não invente a lista.
 
 PROIBIÇÕES
 É proibido:
@@ -180,7 +180,7 @@ ROMANUS resolve.
 """.strip()
 
 # =========================================================
-# ESTILO
+# ESTILO VISUAL
 # =========================================================
 st.markdown("""
 <style>
@@ -189,7 +189,7 @@ st.markdown("""
 }
 
 .main .block-container {
-    max-width: 1000px;
+    max-width: 1100px;
     padding-top: 1.2rem;
     padding-bottom: 3rem;
 }
@@ -201,20 +201,20 @@ st.markdown("""
 }
 
 .romanus-title {
-    font-size: 54px;
+    font-size: 52px;
     font-weight: 900;
     margin-bottom: 0.2rem;
 }
 
 .romanus-subtitle {
     font-size: 22px;
-    opacity: 0.85;
+    opacity: 0.88;
     margin-bottom: 1rem;
 }
 
 .romanus-slogan {
     font-size: 18px;
-    opacity: 0.75;
+    opacity: 0.76;
     margin-bottom: 2rem;
 }
 
@@ -224,6 +224,8 @@ st.markdown("""
     padding: 18px;
     background: #fafafa;
     white-space: pre-wrap;
+    font-size: 18px;
+    line-height: 1.6;
 }
 
 .debug-box {
@@ -232,6 +234,7 @@ st.markdown("""
     padding: 12px;
     background: #fcfcfc;
     font-size: 14px;
+    white-space: pre-wrap;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -247,8 +250,15 @@ def criar_cliente():
     return genai.Client(api_key=api_key)
 
 # =========================================================
-# LEITURA DA BASE
+# LEITURA DE ARQUIVOS
 # =========================================================
+def extrair_texto_txt(caminho_txt: str) -> str:
+    try:
+        with open(caminho_txt, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read().strip()
+    except Exception:
+        return ""
+
 def extrair_texto_pdf(caminho_pdf: str) -> str:
     partes = []
     try:
@@ -263,13 +273,6 @@ def extrair_texto_pdf(caminho_pdf: str) -> str:
     except Exception:
         return ""
     return "\n".join(partes).strip()
-
-def extrair_texto_txt(caminho_txt: str) -> str:
-    try:
-        with open(caminho_txt, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read().strip()
-    except Exception:
-        return ""
 
 @st.cache_data(show_spinner=False)
 def carregar_base_local():
@@ -302,27 +305,124 @@ def carregar_base_local():
     return base
 
 # =========================================================
+# APOIO DE BUSCA
+# =========================================================
+PALAVRAS_IGNORADAS = {
+    "a", "o", "e", "de", "da", "do", "das", "dos", "um", "uma",
+    "em", "por", "para", "com", "sem", "que", "como", "qual",
+    "quais", "onde", "quando", "isso", "essa", "esse", "sobre",
+    "bom", "boa", "dia", "tarde", "noite", "oi", "ola", "olá",
+    "as", "os", "ao", "aos", "na", "no", "nas", "nos"
+}
+
+def normalizar_termos(texto: str):
+    return [
+        t for t in re.findall(r"\w+", (texto or "").lower())
+        if len(t) >= 3 and t not in PALAVRAS_IGNORADAS
+    ]
+
+def pergunta_pede_lista(pergunta: str) -> bool:
+    p = (pergunta or "").lower()
+    gatilhos = [
+        "quais", "lista", "rol", "enumere", "enumeração",
+        "medidas", "requisitos", "itens", "critérios",
+        "quais são", "quais as", "defina", "definição"
+    ]
+    return any(g in p for g in gatilhos)
+
+def score_nome_arquivo(nome: str, pergunta: str) -> int:
+    score = 0
+    nome_lower = nome.lower()
+    pergunta_lower = pergunta.lower()
+
+    palavras_fortes = [
+        "decreto", "lei", "regulamento", "instrução", "it",
+        "norma", "anexo", "quadro", "tabela", "medidas",
+        "segurança", "incêndio", "capítulo", "artigo"
+    ]
+
+    for palavra in palavras_fortes:
+        if palavra in nome_lower and palavra in pergunta_lower:
+            score += 20
+
+    if pergunta_pede_lista(pergunta):
+        for palavra in ["anexo", "quadro", "tabela", "medidas", "regulamento", "decreto"]:
+            if palavra in nome_lower:
+                score += 18
+
+    return score
+
+def localizar_melhor_posicao(texto: str, pergunta: str) -> int:
+    texto_lower = (texto or "").lower()
+    termos = normalizar_termos(pergunta)
+
+    if not termos:
+        return 0
+
+    posicoes = []
+
+    for termo in termos:
+        pos = texto_lower.find(termo)
+        if pos != -1:
+            posicoes.append(pos)
+
+    if posicoes:
+        return min(posicoes)
+
+    padroes_fortes = [
+        "constituem", "são medidas", "medidas de segurança contra incêndio",
+        "capítulo", "artigo", "art.", "incluem", "compreendem"
+    ]
+
+    for padrao in padroes_fortes:
+        pos = texto_lower.find(padrao)
+        if pos != -1:
+            return pos
+
+    return 0
+
+def extrair_trecho_relevante(texto: str, pergunta: str, janela: int = JANELA_TRECHO) -> str:
+    texto_limpo = texto or ""
+    if not texto_limpo.strip():
+        return ""
+
+    pos = localizar_melhor_posicao(texto_limpo, pergunta)
+    inicio = max(0, pos - 700)
+    fim = min(len(texto_limpo), pos + janela)
+
+    return texto_limpo[inicio:fim].strip()
+
+def extrair_referencia_local(texto: str):
+    referencia = ""
+
+    padroes = [
+        r"(art\.?\s*\d+[º°]?)",
+        r"(artigo\s+\d+[º°]?)",
+        r"(item\s+\d+(\.\d+)*)",
+        r"(capítulo\s+[ivxlcdm]+)",
+        r"(capitulo\s+[ivxlcdm]+)",
+        r"(§\s*\d+[º°]?)"
+    ]
+
+    texto_lower = (texto or "").lower()
+
+    for padrao in padroes:
+        m = re.search(padrao, texto_lower, re.IGNORECASE)
+        if m:
+            referencia = m.group(1)
+            break
+
+    return referencia
+
+# =========================================================
 # BUSCA NA BASE
 # =========================================================
-def limpar_pergunta(texto: str):
-    return re.findall(r"\w+", texto.lower())
-
 def buscar_na_base(pergunta: str, top_k: int = TOP_K):
     base = carregar_base_local()
     if not base:
         return []
 
-    ignoradas = {
-        "a", "o", "e", "de", "da", "do", "das", "dos", "um", "uma",
-        "em", "por", "para", "com", "sem", "que", "como", "qual",
-        "quais", "onde", "quando", "isso", "essa", "esse", "sobre",
-        "bom", "boa", "dia", "tarde", "noite", "oi", "ola", "olá"
-    }
-
-    termos = [t for t in limpar_pergunta(pergunta) if len(t) >= 3 and t not in ignoradas]
-    if not termos:
-        return []
-
+    termos = normalizar_termos(pergunta)
     resultados = []
 
     for item in base:
@@ -331,47 +431,73 @@ def buscar_na_base(pergunta: str, top_k: int = TOP_K):
         score = 0
 
         for termo in termos:
-            score += nome.count(termo) * 20
-            score += texto.count(termo) * 3
+            score += nome.count(termo) * 30
+            score += texto.count(termo) * 4
 
-        pergunta_lower = pergunta.lower().strip()
-        if pergunta_lower and pergunta_lower in texto:
-            score += 100
+        if pergunta.lower().strip() and pergunta.lower().strip() in texto:
+            score += 120
+
+        score += score_nome_arquivo(item["arquivo"], pergunta)
+
+        if pergunta_pede_lista(pergunta):
+            gatilhos_lista = [
+                "constituem", "incluem", "compreendem", "são medidas",
+                "medidas de segurança", "deverá ser levado em consideração",
+                "i -", "ii -", "iii -", "iv -"
+            ]
+            for g in gatilhos_lista:
+                if g in texto:
+                    score += 22
+
+        if "decreto" in pergunta.lower() and "decreto" in nome:
+            score += 50
 
         if score > 0:
+            trecho = extrair_trecho_relevante(item["texto"], pergunta, janela=JANELA_TRECHO)
+            referencia = extrair_referencia_local(trecho)
+
             resultados.append({
                 "arquivo": item["arquivo"],
                 "texto": item["texto"],
-                "score": score
+                "trecho": trecho,
+                "score": score,
+                "referencia": referencia
             })
 
     resultados.sort(key=lambda x: x["score"], reverse=True)
     return resultados[:top_k]
 
-def montar_contexto(resultados):
+def montar_contexto(resultados, pergunta: str):
     if not resultados:
         return "Nenhum conteúdo relevante foi localizado na base local."
 
     blocos = []
     for i, item in enumerate(resultados, start=1):
-        trecho = item["texto"][:MAX_TRECHO_POR_DOCUMENTO]
         bloco = (
             f"[DOCUMENTO {i}]\n"
             f"ARQUIVO: {item['arquivo']}\n"
-            f"TRECHO:\n{trecho}\n"
+            f"REFERÊNCIA LOCALIZADA: {item['referencia'] if item['referencia'] else 'não localizada'}\n"
+            f"TRECHO RELEVANTE:\n{item['trecho']}\n"
         )
         blocos.append(bloco)
 
-    return "\n\n".join(blocos)
+    instrucao_pergunta = ""
+    if pergunta_pede_lista(pergunta):
+        instrucao_pergunta = (
+            "\n[ATENÇÃO ESPECIAL]\n"
+            "A pergunta do usuário pede lista, enumeração, rol ou medidas. "
+            "Procure por enumeração expressa no trecho e reproduza fielmente.\n"
+        )
+
+    return instrucao_pergunta + "\n\n".join(blocos)
 
 # =========================================================
-# CHAMADA AO MODELO
+# GERAÇÃO DE RESPOSTA
 # =========================================================
-def gerar_resposta(pergunta: str):
+def gerar_resposta(pergunta: str, modo_estrito: bool = True):
     cliente = criar_cliente()
-
     resultados = buscar_na_base(pergunta, TOP_K)
-    contexto = montar_contexto(resultados)
+    contexto = montar_contexto(resultados, pergunta)
 
     prompt_final = f"""
 {PROMPT_SISTEMA}
@@ -382,13 +508,19 @@ PERGUNTA DO USUÁRIO:
 BASE LOCAL LOCALIZADA:
 {contexto}
 
-INSTRUÇÕES FINAIS
+INSTRUÇÕES FINAIS DE EXECUÇÃO
 1. Priorize integralmente a base local.
 2. Se a base responder, responda com base nela.
-3. Cite os arquivos usados, se possível.
+3. Cite os arquivos usados e a referência localizada, se houver.
 4. Não invente fundamento.
-5. Se a base não responder com segurança, diga isso expressamente.
-6. Não esconda limitação com texto bonito.
+5. Se a pergunta pedir lista, rol, enumeração, medidas ou requisitos, só apresente a lista se ela estiver expressamente visível no trecho.
+6. Se houver enumeração expressa, reproduza a enumeração fielmente.
+7. Se os trechos apenas mencionarem o tema, diga isso claramente.
+8. Não esconda limitação com texto bonito.
+9. Não use sumário, índice ou menção indireta como fundamento principal.
+10. Se houver um trecho mais específico que outro, prefira o mais específico.
+
+Se não houver base suficiente, use uma das fórmulas de insuficiência previstas no prompt.
 """.strip()
 
     inicio = time.time()
@@ -400,13 +532,16 @@ INSTRUÇÕES FINAIS
         )
 
         tempo = round(time.time() - inicio, 2)
-
         texto = ""
+
         if hasattr(resposta, "text") and resposta.text:
             texto = resposta.text.strip()
 
         if not texto:
             texto = "Não houve resposta textual do modelo."
+
+        if modo_estrito and not resultados:
+            texto = "Não localizei base suficiente para responder com segurança."
 
         return {
             "ok": True,
@@ -438,7 +573,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================
-# CONTROLE
+# CONTROLES
 # =========================================================
 with st.expander("Configuração", expanded=False):
     modo_estrito = st.checkbox(
@@ -462,36 +597,40 @@ pergunta = st.text_area(
 # =========================================================
 # EXECUÇÃO
 # =========================================================
-if st.button("INICIAR", use_container_width=False):
+if st.button("INICIAR"):
     if not pergunta.strip():
         st.warning("Digite uma pergunta.")
     else:
         with st.spinner("ROMANUS analisando a base..."):
-            resultado = gerar_resposta(pergunta)
+            resultado = gerar_resposta(pergunta, modo_estrito=modo_estrito)
 
         if not resultado["ok"]:
             st.error("Erro ao gerar resposta.")
             st.code(resultado["erro"])
         else:
-            resposta_final = resultado["texto"]
-
-            if modo_estrito and "Nenhum conteúdo relevante foi localizado na base local." in montar_contexto(resultado["resultados"]):
-                resposta_final = "Não localizei base suficiente para responder com segurança."
-
             st.markdown("### Resposta")
-            st.markdown(f'<div class="bloco-resposta">{resposta_final}</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="bloco-resposta">{resultado["texto"]}</div>',
+                unsafe_allow_html=True
+            )
 
         if mostrar_debug:
-            st.markdown("### Diagnóstico")
-            arquivos = [r["arquivo"] for r in resultado["resultados"]] if "resultados" in resultado else []
+            arquivos_usados = [r["arquivo"] for r in resultado.get("resultados", [])]
+            referencias = [r["referencia"] for r in resultado.get("resultados", []) if r.get("referencia")]
             base_total = carregar_base_local()
 
-            debug_texto = f"""
-Arquivos na base: {len(base_total)}
-Arquivos usados na busca: {len(arquivos)}
-Lista de arquivos usados: {arquivos if arquivos else "Nenhum"}
-Modelo: {MODELO_GEMINI}
-Tempo de resposta: {resultado.get("tempo", 0)} s
-Modo estrito: {"Ligado" if modo_estrito else "Desligado"}
-"""
-            st.markdown(f'<div class="debug-box">{debug_texto}</div>', unsafe_allow_html=True)
+            debug_texto = (
+                f"Arquivos na base: {len(base_total)}\n"
+                f"Arquivos usados na busca: {len(arquivos_usados)}\n"
+                f"Lista de arquivos usados: {arquivos_usados if arquivos_usados else 'Nenhum'}\n"
+                f"Referências localizadas: {referencias if referencias else 'Nenhuma'}\n"
+                f"Modelo: {MODELO_GEMINI}\n"
+                f"Tempo de resposta: {resultado.get('tempo', 0)} s\n"
+                f"Modo estrito: {'Ligado' if modo_estrito else 'Desligado'}"
+            )
+
+            st.markdown("### Diagnóstico")
+            st.markdown(
+                f'<div class="debug-box">{debug_texto}</div>',
+                unsafe_allow_html=True
+            )
