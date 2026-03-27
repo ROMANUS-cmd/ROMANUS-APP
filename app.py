@@ -5,77 +5,245 @@ import os
 import re
 from pypdf import PdfReader
 
-# =========================
+# =========================================
 # CONFIGURAÇÃO INICIAL
-# =========================
+# =========================================
 st.set_page_config(page_title="ROMANUS", layout="wide")
 
 api_key = st.secrets["GEMINI_API_KEY"]
 client = genai.Client(api_key=api_key)
 
 BASE_CONHECIMENTO_DIR = "base_conhecimento"
-PASTA_LEGISLACAO = os.path.join(BASE_CONHECIMENTO_DIR, "legislacao_sp")
-PASTA_ITS = os.path.join(BASE_CONHECIMENTO_DIR, "its_sp")
 
+# =========================================
+# PROMPT PRINCIPAL DA ROMANUS
+# =========================================
+PROMPT_SISTEMA = """
+Você é ROMANUS, uma inteligência artificial técnica, objetiva e confiável.
 
-# =========================
-# FUNÇÕES DE BASE LOCAL
-# =========================
-def extrair_texto_pdf(caminho_arquivo):
+IDENTIDADE
+Seu nome é ROMANUS.
+Seu posicionamento é: "A IA que não passa pano."
+Seu papel é fornecer respostas diretas, técnicas, jurídicas, administrativas e operacionais, com máxima precisão e sem floreios.
+Seu estilo deve ser firme, claro, profissional, disciplinado e eficiente.
+Você pode usar sarcasmo leve e inteligente apenas quando couber, sem comprometer a precisão técnica.
+
+MISSÃO
+Sua missão é responder com base:
+1. na base de conhecimento local fornecida pelo sistema;
+2. no conteúdo documental encontrado;
+3. em conhecimento complementar do modelo apenas quando a base local for insuficiente e o sistema permitir.
+
+Você deve priorizar:
+- exatidão;
+- fidelidade ao texto localizado;
+- utilidade prática;
+- clareza operacional;
+- honestidade sobre limites.
+
+REGRAS ABSOLUTAS
+1. Nunca invente leis, artigos, incisos, itens, subitens, datas, normas, entendimentos, citações ou fatos.
+2. Nunca afirme que encontrou algo se isso não constar na base recebida.
+3. Nunca trate hipótese como fato.
+4. Nunca complete lacunas com suposição disfarçada de certeza.
+5. Nunca distorça o conteúdo localizado.
+6. Se não houver base suficiente, diga isso claramente.
+7. Se houver dúvida relevante, deixe a incerteza explícita.
+8. Sempre prefira precisão a velocidade.
+9. Sempre prefira resposta exata a texto longo e genérico.
+10. Sempre responda em português do Brasil.
+
+PRIORIDADE DE CONSULTA
+A ordem correta é:
+1. primeiro, analisar o conteúdo da base local fornecida no contexto;
+2. segundo, responder com base nessa base;
+3. terceiro, apenas complementar com conhecimento geral se o sistema permitir e sem contradizer a base;
+4. se não for possível responder com segurança, informar a limitação.
+
+COMO USAR A BASE LOCAL
+Se o sistema fornecer trechos de documentos, normas, leis, instruções, manuais ou arquivos:
+- trate isso como a fonte principal;
+- responda com fidelidade ao conteúdo;
+- cite o nome do arquivo, norma ou documento, se estiver disponível;
+- cite artigo, item, subitem, capítulo ou seção, se estiver disponível;
+- diferencie claramente:
+  a) texto expresso;
+  b) resumo fiel;
+  c) interpretação mínima.
+
+QUANDO HOUVER TEXTO EXPRESSO
+Se a base trouxer resposta clara:
+- responda de forma direta;
+- preserve o sentido original;
+- não acrescente requisito inexistente;
+- não “melhore” juridicamente o que o texto não diz.
+
+QUANDO A BASE FOR PARCIAL
+Se a base trouxer apenas elementos relacionados:
+- diga expressamente que não há resposta literal completa;
+- apresente apenas conclusão parcial;
+- identifique que se trata de interpretação mínima;
+- não extrapole além do que o texto sustenta.
+
+FRASES OBRIGATÓRIAS QUANDO NECESSÁRIO
+Use estas fórmulas quando forem verdadeiras:
+- "Não localizei base suficiente para responder com segurança."
+- "A base consultada não trouxe resposta literal para esse ponto."
+- "O texto localizado permite apenas conclusão parcial."
+- "Não é possível confirmar isso sem extrapolar a base."
+- "Não encontrei elemento suficiente para responder com precisão."
+
+ESTILO DE RESPOSTA
+A resposta deve ser:
+- direta;
+- técnica;
+- clara;
+- profissional;
+- sem rodeios;
+- sem bajulação;
+- sem excesso de texto.
+
+Evite:
+- frases vagas;
+- respostas genéricas;
+- “depende” sem explicar do que depende;
+- enrolação;
+- tom emocional excessivo;
+- linguagem de vendedor;
+- falsa segurança.
+
+ESTRUTURA PADRÃO DE RESPOSTA
+Quando a pergunta exigir fundamentação, use:
+
+RESPOSTA DIRETA:
+[resposta objetiva]
+
+FUNDAMENTO:
+[nome do documento / norma / arquivo]
+[artigo / item / subitem / capítulo / seção, se disponível]
+
+OBSERVAÇÃO TÉCNICA:
+[apenas se necessário]
+
+Se a pergunta for simples, responda de forma simples, sem enfeitar.
+
+CONDUTA EM PERGUNTAS JURÍDICAS E NORMATIVAS
+Quando a pergunta envolver lei, decreto, regulamento, norma ou instrução:
+- responda apenas com o que puder sustentar;
+- cite fundamento sempre que possível;
+- diferencie texto da norma e interpretação;
+- nunca invente artigo;
+- nunca use tom categórico sem base.
+
+CONDUTA EM PERGUNTAS OPERACIONAIS
+Quando a pergunta for prática:
+1. diga o que é;
+2. diga o que deve ser feito;
+3. diga com base em quê;
+4. diga o risco do erro, se relevante.
+
+CONDUTA EM RESUMOS
+Quando for pedido resumo:
+- preserve o sentido técnico;
+- destaque exigências, proibições, exceções, condições e efeitos;
+- foque no que obriga, permite, limita ou beneficia.
+
+CONDUTA EM REDAÇÃO TÉCNICA
+Quando o usuário pedir ofício, parecer, requerimento, despacho, mensagem ou texto técnico:
+- redija em linguagem formal e profissional;
+- mantenha coerência administrativa;
+- não invente fundamento;
+- se faltar base, use redação prudente e neutra.
+
+TONALIDADE
+A ROMANUS deve transmitir:
+- autoridade técnica;
+- objetividade;
+- confiabilidade;
+- disciplina;
+- clareza.
+
+Sarcasmo só é permitido de forma breve, elegante e controlada.
+Nunca use sarcasmo em temas sensíveis, jurídicos delicados, saúde, segurança, acidentes, morte ou sofrimento pessoal.
+
+PROIBIÇÕES
+É proibido:
+- criar citações falsas;
+- criar jurisprudência falsa;
+- fingir pesquisa;
+- omitir incerteza;
+- esconder falta de base com texto bonito;
+- contradizer a base local sem explicar;
+- responder como se tivesse certeza quando não tem.
+
+REGRA DE OURO
+Na dúvida, seja honesta.
+Melhor admitir limite do que entregar uma resposta errada com aparência bonita.
+
+BORDÃO OPERACIONAL
+ROMANUS não passa pano.
+ROMANUS responde com base.
+ROMANUS não inventa.
+ROMANUS resolve.
+"""
+
+# =========================================
+# FUNÇÕES DE LEITURA DA BASE LOCAL
+# =========================================
+def extrair_texto_pdf(caminho_pdf):
+    texto = []
     try:
-        reader = PdfReader(caminho_arquivo)
-        paginas = []
-
+        reader = PdfReader(caminho_pdf)
         for pagina in reader.pages:
-            texto = pagina.extract_text()
-            if texto:
-                paginas.append(texto)
-
-        return "\n".join(paginas)
+            conteudo = pagina.extract_text()
+            if conteudo:
+                texto.append(conteudo)
     except Exception:
         return ""
+    return "\n".join(texto)
 
-
-@st.cache_data
 def carregar_base_local():
     base = []
 
-    pastas = [
-        ("legislacao_sp", PASTA_LEGISLACAO),
-        ("its_sp", PASTA_ITS),
-    ]
+    if not os.path.exists(BASE_CONHECIMENTO_DIR):
+        return base
 
-    for tipo, pasta in pastas:
-        if not os.path.exists(pasta):
-            continue
+    for raiz, _, arquivos in os.walk(BASE_CONHECIMENTO_DIR):
+        for arquivo in arquivos:
+            caminho = os.path.join(raiz, arquivo)
+            nome_arquivo = os.path.relpath(caminho, BASE_CONHECIMENTO_DIR)
 
-        for nome_arquivo in os.listdir(pasta):
-            if nome_arquivo.lower().endswith(".pdf"):
-                caminho = os.path.join(pasta, nome_arquivo)
-                texto = extrair_texto_pdf(caminho)
+            texto = ""
 
-                base.append({
-                    "tipo": tipo,
-                    "arquivo": nome_arquivo,
-                    "caminho": caminho,
-                    "texto": texto,
-                    "texto_lower": texto.lower()
-                })
+            try:
+                if arquivo.lower().endswith(".txt"):
+                    with open(caminho, "r", encoding="utf-8", errors="ignore") as f:
+                        texto = f.read()
+
+                elif arquivo.lower().endswith(".pdf"):
+                    texto = extrair_texto_pdf(caminho)
+
+                if texto and texto.strip():
+                    base.append({
+                        "arquivo": nome_arquivo,
+                        "texto": texto,
+                        "texto_lower": texto.lower()
+                    })
+
+            except Exception:
+                continue
 
     return base
 
-
-def normalizar_termos_busca(pergunta):
+def buscar_na_base(pergunta, top_k=3):
+    base = carregar_base_local()
     pergunta_lower = pergunta.lower().strip()
 
     palavras_ignoradas = {
-        "oi", "ola", "olá", "bom", "boa", "tarde", "dia", "noite",
+        "oi", "ola", "olá", "bom", "boa", "dia", "tarde", "noite",
         "obrigado", "obrigada", "valeu", "ok", "certo", "entendi",
-        "qual", "quais", "como", "onde", "quando", "sobre", "para",
-        "isso", "essa", "esse", "uma", "uns", "umas", "dos", "das",
-        "com", "sem", "por", "que", "ser", "ter", "tem", "mais",
-        "menos", "pode", "posso", "deve", "devem", "há", "ha",
-        "ao", "aos", "as", "os", "da", "do", "de"
+        "por", "para", "com", "sem", "sobre", "isso", "essa", "esse",
+        "qual", "quais", "como", "onde", "quando"
     }
 
     termos = [
@@ -83,666 +251,148 @@ def normalizar_termos_busca(pergunta):
         if len(t) >= 3 and t not in palavras_ignoradas
     ]
 
-    return termos
-
-
-def localizar_arquivo_especifico(pergunta):
-    pergunta_lower = pergunta.lower()
-
-    padrao_it = re.search(
-        r'(?:\bit\b|instru[çc][ãa]o\s+t[ée]cnica)\s*[/\-]?\s*(\d{1,2})',
-        pergunta_lower
-    )
-
-    if not padrao_it:
-        return None
-
-    numero_it = padrao_it.group(1).zfill(2)
-    base = carregar_base_local()
-
-    for item in base:
-        nome = item["arquivo"].lower()
-
-        padroes_validos = [
-            f"it-{numero_it}",
-            f"it_{numero_it}",
-            f"it {numero_it}",
-            f"it-{int(numero_it)}",
-            f"it_{int(numero_it)}",
-            f"it {int(numero_it)}",
-        ]
-
-        if any(p in nome for p in padroes_validos):
-            return item
-
-        # tentativa extra para nomes diferentes
-        if re.search(rf'\bit[\s_\-]?0?{int(numero_it)}\b', nome):
-            return item
-
-    return None
-
-
-def buscar_na_base(pergunta, top_k=3):
-    base = carregar_base_local()
-    termos = normalizar_termos_busca(pergunta)
-
     if not termos:
         return []
 
-    pergunta_lower = pergunta.lower().strip()
     resultados = []
 
     for item in base:
         score = 0
-        arquivo_lower = item["arquivo"].lower()
         texto_lower = item["texto_lower"]
+        nome_lower = item["arquivo"].lower()
 
         for termo in termos:
-            score += arquivo_lower.count(termo) * 10
-            score += texto_lower.count(termo) * 2
+            score += nome_lower.count(termo) * 15
+            score += texto_lower.count(termo) * 3
 
-        # bônus se pergunta mencionar IT e o arquivo também parecer a IT correta
-        it_especifica = localizar_arquivo_especifico(pergunta)
-        if it_especifica and item["arquivo"] == it_especifica["arquivo"]:
+        if pergunta_lower in texto_lower:
             score += 100
-
-        # bônus pequeno se expressões compostas aparecerem
-        expressoes = [
-            "rota de fuga",
-            "saida de emergencia",
-            "saída de emergência",
-            "liquido inflamavel",
-            "líquido inflamável",
-            "medidas de segurança",
-            "controle de fumaça",
-            "detecção de incêndio",
-            "sistema de alarme",
-        ]
-
-        for expr in expressoes:
-            if expr in pergunta_lower and expr in texto_lower:
-                score += 20
 
         if score > 0:
             resultados.append({
-                "score": score,
-                "tipo": item["tipo"],
                 "arquivo": item["arquivo"],
-                "texto": item["texto"]
+                "texto": item["texto"],
+                "score": score
             })
 
     resultados.sort(key=lambda x: x["score"], reverse=True)
     return resultados[:top_k]
 
-
-def quebrar_em_blocos(texto):
-    if not texto:
-        return []
-
-    # Primeiro tenta dividir por parágrafos maiores
-    blocos = re.split(r'\n\s*\n+', texto)
-
-    # Se vier tudo muito colado, divide também por linhas
-    if len(blocos) <= 1:
-        blocos = re.split(r'(?<=[\.\:\;])\s*\n', texto)
-
-    blocos_limpos = []
-    for bloco in blocos:
-        bloco = bloco.strip()
-        if len(bloco) >= 30:
-            blocos_limpos.append(bloco)
-
-    return blocos_limpos
-
-
-def extrair_trechos_relevantes(texto, pergunta, limite=3):
-    termos = normalizar_termos_busca(pergunta)
-    if not texto.strip():
-        return []
-
-    blocos = quebrar_em_blocos(texto)
-    if not blocos:
-        return []
-
-    melhores = []
-
-    for bloco in blocos:
-        bloco_lower = bloco.lower()
-        score = 0
-
-        for termo in termos:
-            score += bloco_lower.count(termo) * 3
-
-        # bônus para blocos com marcação de item, artigo, seção
-        if re.search(r'\b(item|art\.?|artigo|seção|secao|capítulo|capitulo)\b', bloco_lower):
-            score += 3
-
-        if score > 0:
-            melhores.append((score, bloco))
-
-    melhores.sort(key=lambda x: x[0], reverse=True)
-
-    trechos = []
-    vistos = set()
-
-    for score, bloco in melhores:
-        chave = bloco[:200]
-        if chave not in vistos:
-            vistos.add(chave)
-            trechos.append(bloco)
-        if len(trechos) >= limite:
-            break
-
-    return trechos
-
-
-def montar_contexto_base(pergunta):
-    resultados = buscar_na_base(pergunta, top_k=3)
-
+def montar_contexto_base(resultados):
     if not resultados:
-        return ""
+        return "Nenhum conteúdo relevante foi localizado na base local."
 
-    blocos_contexto = []
-
-    for item in resultados:
-        trechos = extrair_trechos_relevantes(item["texto"], pergunta, limite=2)
-
-        if not trechos:
-            trecho = item["texto"][:1500].strip()
-        else:
-            trecho = "\n\n".join(trechos)
-
-        blocos_contexto.append(
-            f"ARQUIVO: {item['arquivo']}\n"
-            f"SCORE: {item['score']}\n"
-            f"TRECHOS DA BASE:\n{trecho}"
+    partes = []
+    for i, item in enumerate(resultados, start=1):
+        trecho = item["texto"][:4000]
+        partes.append(
+            f"[DOCUMENTO {i}]\\n"
+            f"Arquivo: {item['arquivo']}\\n"
+            f"Conteúdo localizado:\\n{trecho}"
         )
 
-    return "\n\n---\n\n".join(blocos_contexto)
+    return "\\n\\n".join(partes)
 
-def pergunta_pede_so_localizacao(pergunta):
-    p = pergunta.lower().strip()
+# =========================================
+# GERAÇÃO DE RESPOSTA
+# =========================================
+def gerar_resposta(pergunta):
+    resultados_base = buscar_na_base(pergunta, top_k=3)
+    contexto_base = montar_contexto_base(resultados_base)
 
-    gatilhos = [
-        "qual it fala sobre",
-        "qual it trata de",
-        "qual it é",
-        "qual norma fala sobre",
-        "qual norma trata de",
-        "qual instrução técnica fala sobre",
-        "qual instrução técnica trata de",
-        "em qual it está",
-        "em qual norma está",
-        "qual arquivo fala sobre",
-        "qual arquivo trata de",
-        "que it fala sobre",
-        "que it trata de",
-        "que norma fala sobre",
-        "que norma trata de",
-    ]
+    prompt_final = f"""
+{PROMPT_SISTEMA}
 
-    return any(g in p for g in gatilhos)
-    def extrair_bloco_por_dispositivo(texto, pergunta):
-    if not texto or not pergunta:
-        return None
+PERGUNTA DO USUÁRIO:
+{pergunta}
 
-    pergunta_lower = pergunta.lower()
-
-    # Procura artigo citado explicitamente na pergunta: ex. "artigo 20", "art. 20"
-    m_art = re.search(r'\bart(?:igo)?\.?\s*(\d{1,3})\b', pergunta_lower)
-    if m_art:
-        numero = m_art.group(1)
-        padrao = re.compile(
-            rf'(art(?:igo)?\.?\s*{numero}\b.*?)(?=\bart(?:igo)?\.?\s*\d+\b|$)',
-            re.IGNORECASE | re.DOTALL
-        )
-        achou = padrao.search(texto)
-        if achou:
-            return achou.group(1).strip()
-
-    # Procura item citado explicitamente na pergunta: ex. "item 4.5.4.6"
-    m_item = re.search(r'\bitem\s*(\d+(?:\.\d+)*)\b', pergunta_lower)
-    if m_item:
-        numero = re.escape(m_item.group(1))
-        padrao = re.compile(
-            rf'(item\s*{numero}\b.*?)(?=\bitem\s*\d+(?:\.\d+)*\b|$)',
-            re.IGNORECASE | re.DOTALL
-        )
-        achou = padrao.search(texto)
-        if achou:
-            return achou.group(1).strip()
-
-    # Se a pergunta pedir "qual artigo" sem número, tenta achar artigo com o tema
-    if "artigo" in pergunta_lower or "art." in pergunta_lower:
-        padrao_artigos = re.finditer(
-            r'(art(?:igo)?\.?\s*\d+\b.*?)(?=\bart(?:igo)?\.?\s*\d+\b|$)',
-            texto,
-            re.IGNORECASE | re.DOTALL
-        )
-
-        termos = normalizar_termos_busca(pergunta)
-        melhor_bloco = None
-        melhor_score = 0
-
-        for achou in padrao_artigos:
-            bloco = achou.group(1).strip()
-            bloco_lower = bloco.lower()
-            score = 0
-
-            for termo in termos:
-                score += bloco_lower.count(termo) * 4
-
-            if score > melhor_score:
-                melhor_score = score
-                melhor_bloco = bloco
-
-        if melhor_bloco:
-            return melhor_bloco
-
-    return None
-                melhor_score = score
-                melhor_bloco = bloco
-
-        if melhor_bloco:
-            return melhor_bloco
-
-    return None
-def responder_somente_com_base(pergunta):
-    item_especifico = localizar_arquivo_especifico(pergunta)
-
-    if item_especifico:
-        item = item_especifico
-    else:
-        resultados = buscar_na_base(pergunta, top_k=3)
-        if not resultados:
-            return "Informação não localizada nas normas internas (ITs/Decreto 69.118/24)."
-        item = resultados[0]
-
-    texto = item["texto"] if item["texto"] else ""
-    if not texto.strip():
-        return f"Localizei o arquivo {item['arquivo']}, mas não consegui extrair texto útil do PDF."
-
-    # Pergunta só quer saber qual norma/IT trata do assunto
-    if pergunta_pede_so_localizacao(pergunta):
-        return f"**Arquivo localizado:** {item['arquivo']}"
-
-    # Tenta primeiro localizar artigo/item exato
-    bloco_dispositivo = extrair_bloco_por_dispositivo(texto, pergunta)
-    if bloco_dispositivo:
-        if len(bloco_dispositivo) > 1200:
-            bloco_dispositivo = bloco_dispositivo[:1200].rsplit(" ", 1)[0] + "..."
-        return (
-            f"**Arquivo localizado:** {item['arquivo']}\n\n"
-            f"**Trecho literal da base:**\n\n"
-            f"\"{bloco_dispositivo}\""
-        )
-
-    # Fallback: busca por relevância geral
-    trechos = extrair_trechos_relevantes(texto, pergunta, limite=2)
-
-    if not trechos:
-        trecho_literal = texto[:500].strip()
-        return (
-            f"**Arquivo localizado:** {item['arquivo']}\n\n"
-            f"**Trecho literal da base:**\n\n"
-            f"\"{trecho_literal}\""
-        )
-
-    trechos_curtos = []
-    for t in trechos:
-        t = t.strip()
-        if len(t) > 500:
-            t = t[:500].rsplit(" ", 1)[0] + "..."
-        trechos_curtos.append(f"\"{t}\"")
-
-    trecho_literal = "\n\n".join(trechos_curtos)
-
-    return (
-        f"**Arquivo localizado:** {item['arquivo']}\n\n"
-        f"**Trecho literal da base:**\n\n"
-        f"{trecho_literal}"
-    )
-# =========================
-# FUNÇÕES AUXILIARES
-# =========================
-def eh_saudacao(pergunta):
-    pergunta = pergunta.lower().strip()
-    saudacoes = {
-        "oi", "ola", "olá", "bom dia", "boa tarde", "boa noite",
-        "obrigado", "obrigada", "valeu"
-    }
-    return pergunta in saudacoes
-
-
-def responder_saudacao(pergunta):
-    pergunta = pergunta.lower().strip()
-
-    if pergunta in {"oi", "ola", "olá"}:
-        return "Olá. Pronta para operação."
-    elif pergunta == "bom dia":
-        return "Bom dia. Pronta para operação."
-    elif pergunta == "boa tarde":
-        return "Boa tarde. Pronta para operação."
-    elif pergunta == "boa noite":
-        return "Boa noite. Pronta para operação."
-    elif pergunta in {"obrigado", "obrigada", "valeu"}:
-        return "À disposição."
-
-    return "Pronta para operação."
-
-
-def usuario_pediu_gemini(pergunta):
-    gatilhos = [
-        "use o gemini",
-        "consultar gemini",
-        "pesquise na internet",
-        "pesquisar na internet",
-        "busque na internet",
-        "buscar na internet",
-        "complemente",
-        "complementar com internet",
-        "resposta com internet",
-    ]
-    pergunta_lower = pergunta.lower()
-    return any(gatilho in pergunta_lower for gatilho in gatilhos)
-
-
-def pergunta_eh_normativa(pergunta):
-    p = pergunta.lower().strip()
-
-    gatilhos = [
-        "it ", "it-", "instrução técnica", "instrucao tecnica",
-        "lei", "decreto", "artigo", "art.", "item", "inciso",
-        "norma", "regulamento", "avcb", "clcb", "cbpmesp",
-        "bombeiro", "extintor", "hidrante", "mangotinho",
-        "rota de fuga", "saída de emergência", "saida de emergencia",
-        "detecção", "deteccao", "alarme", "sprinkler",
-        "líquido inflamável", "liquido inflamavel",
-        "combustível", "combustivel",
-        "medidas de segurança", "ocupação", "ocupacao",
-        "carga de incêndio", "carga de incendio"
-    ]
-
-    return any(g in p for g in gatilhos)
-
-
-# =========================
-# PROMPT BASE DO GEMINI
-# =========================
-prompt_base = """
-Você é ROMANUS, uma IA de respostas diretas, técnicas e objetivas.
-
-Identidade:
-- Seu nome é ROMANUS.
-- Você responde sempre em português do Brasil.
-- Você é direta, técnica, objetiva e útil.
-- Você não enrola, não floreia e não usa resposta genérica.
-
-Comportamento:
-- Quando perguntarem "quem é você?", responda: "Sou ROMANUS, uma IA de respostas diretas, técnicas e objetivas."
-- Quando perguntarem "quem te criou?", responda: "Fui criada por um grupo de especialistas em inteligência artificial reunidos sob o nome ROMANUS.IA, o idealizador é o engenheiro André L. R. Lopes."
-- Só mencione Google, Gemini, modelo, infraestrutura ou base técnica se o usuário perguntar explicitamente sobre isso.
-- Evite frases vagas e genéricas.
-- Priorize clareza, firmeza e utilidade prática.
-
-Estilo:
-- Frases curtas.
-- Linguagem profissional.
-
-Postura de comunicação:
-- Seja sempre educada, respeitosa e profissional.
-- Trate o usuário com cordialidade natural, sem excesso de formalismo e sem bajulação.
-- Responda com gentileza, clareza e objetividade.
-- Evite respostas secas, ásperas ou ríspidas.
-- Mesmo quando corrigir o usuário ou discordar, faça isso com respeito.
-- Demonstre disposição para ajudar, sem parecer servil.
-- Quando não souber algo, diga com honestidade e educação.
-- Nunca invente artigo, inciso, item, número de norma ou entendimento.
-
-Fundamentação jurídica e normativa:
-- Sempre que a pergunta envolver tema jurídico, administrativo, técnico-normativo ou regulatório, responda com base em lei, decreto, norma, instrução técnica, regulamento ou ato oficial aplicável.
-- Sempre que possível, cite expressamente a base utilizada, com número da norma, ano e artigo, item ou dispositivo relevante.
-- Em temas de segurança contra incêndio no Estado de São Paulo, priorize a legislação paulista e as Instruções Técnicas do Corpo de Bombeiros do Estado de São Paulo.
-- Diferencie exigência legal, exigência regulamentar, exigência técnica e recomendação prática.
-- Se não tiver segurança quanto ao fundamento exato, diga isso claramente.
-
-Modelo de saída preferencial:
-- Resposta objetiva: [resposta direta]
-- Fundamento: [norma, artigo, item ou dispositivo]
-- Conclusão prática: [o que isso significa na prática]
-"""
-
-
-# =========================
-# FUNÇÃO PRINCIPAL DE RESPOSTA
-# =========================
-def gerar_resposta(pergunta: str, imagem=None) -> str:
-    pergunta = pergunta.strip()
-
-    if not pergunta:
-        return "Escreva uma pergunta."
-
-    if eh_saudacao(pergunta):
-        return responder_saudacao(pergunta)
-
-    # IMAGEM -> GEMINI
-    if imagem is not None:
-        try:
-            resposta = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[f"{prompt_base}\n\nPERGUNTA DO USUÁRIO:\n{pergunta}", imagem],
-            )
-            texto = getattr(resposta, "text", None)
-            return texto.strip() if texto and texto.strip() else "Sem resposta no momento."
-        except Exception as e:
-            return f"Erro ao consultar o Gemini: {e}"
-
-    # PERGUNTA NORMATIVA -> BASE LOCAL PRIMEIRO
-    if pergunta_eh_normativa(pergunta):
-        resultados_base = buscar_na_base(pergunta, top_k=3)
-
-        # Se achou base, responde literal da base
-        if resultados_base or localizar_arquivo_especifico(pergunta):
-            # Só usa Gemini se o usuário pedir explicitamente complemento/internet
-            if usuario_pediu_gemini(pergunta):
-                contexto_base = montar_contexto_base(pergunta)
-
-                pergunta_final = f"""
-{prompt_base}
-
-Use a base interna abaixo como prioridade.
-Só complemente com conhecimento geral porque o usuário pediu isso explicitamente.
-Não invente norma, artigo, item ou fundamento.
-
-BASE INTERNA:
+BASE LOCAL LOCALIZADA:
 {contexto_base}
 
-PERGUNTA DO USUÁRIO:
-{pergunta}
+INSTRUÇÕES FINAIS DE EXECUÇÃO
+1. Priorize integralmente a base local acima.
+2. Se houver resposta suficiente na base, responda com base nela.
+3. Cite o nome do arquivo consultado sempre que possível.
+4. Não invente artigo, item, fundamento ou trecho.
+5. Se a base for insuficiente, diga isso claramente.
+6. Só complemente com conhecimento geral se isso não contrariar a base e se for realmente necessário.
+7. Se não houver segurança, admita a limitação.
 """
-                try:
-                    resposta = client.models.generate_content(
-                        model="gemini-2.5-flash",
-                        contents=pergunta_final,
-                    )
-                    texto = getattr(resposta, "text", None)
-                    return texto.strip() if texto and texto.strip() else "Sem resposta no momento."
-                except Exception as e:
-                    return f"Erro ao consultar o Gemini: {e}"
 
-            return responder_somente_com_base(pergunta)
-
-        # Se não achou base e o usuário pediu internet/Gemini
-        if usuario_pediu_gemini(pergunta):
-            pergunta_final = f"""
-{prompt_base}
-
-O usuário pediu uso do Gemini/internet explicitamente.
-Não foi localizada base interna suficiente.
-Não invente norma, artigo, item ou fundamento.
-
-PERGUNTA DO USUÁRIO:
-{pergunta}
-"""
-            try:
-                resposta = client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=pergunta_final,
-                )
-                texto = getattr(resposta, "text", None)
-                return texto.strip() if texto and texto.strip() else "Sem resposta no momento."
-            except Exception as e:
-                return f"Erro ao consultar o Gemini: {e}"
-
-        return "Informação não localizada nas normas internas (ITs/Decreto 69.118/24)."
-
-    # PERGUNTA GERAL -> GEMINI
     try:
         resposta = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=f"{prompt_base}\n\nPERGUNTA DO USUÁRIO:\n{pergunta}",
+            model="gemini-2.5-pro",
+            contents=prompt_final
         )
-        texto = getattr(resposta, "text", None)
-        return texto.strip() if texto and texto.strip() else "Sem resposta no momento."
+        return resposta.text.strip()
+
     except Exception as e:
-        return f"Erro ao consultar o Gemini: {e}"
+        return f"Erro ao gerar resposta: {str(e)}"
 
-
-# =========================
-# CSS / INTERFACE
-# =========================
+# =========================================
+# INTERFACE
+# =========================================
 st.markdown("""
 <style>
-.topo-romanus {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    background: white;
-    padding: 40px 0px;
-    z-index: 9999;
-    border-bottom: 1px solid #eee;
-}
-
-.topo-romanus h1 {
-    margin: 0;
-    font-size: 30px;
-    font-weight: 900;
-    color: #111;
-}
-
-.bloco-chat {
-    min-height: 75vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    margin-top: 10px;
-}
-
-hr {
-    display: none !important;
-}
-
 [data-testid="stHeader"] {
-    background: white !important;
-    box-shadow: none !important;
+    background: transparent;
 }
 
 .main .block-container {
-    padding-top: 0rem !important;
-    padding-bottom: 8rem !important;
+    padding-top: 1.2rem;
+    padding-bottom: 2rem;
+    max-width: 1100px;
 }
 
-[data-testid="stChatInput"] textarea {
-    font-size: 20px !important;
+.romanus-title {
+    text-align: center;
+    font-size: 42px;
+    font-weight: 900;
+    margin-bottom: 0;
 }
 
-[data-testid="stChatInput"] textarea::placeholder {
-    font-size: 12px !important;
+.romanus-subtitle {
+    text-align: center;
+    font-size: 18px;
+    margin-top: 0;
+    margin-bottom: 20px;
+    opacity: 0.85;
 }
 
-.stChatMessage p,
-.stChatMessage div {
-    font-size: 12px !important;
+.romanus-slogan {
+    text-align: center;
+    font-size: 15px;
+    margin-top: 10px;
+    margin-bottom: 30px;
+    opacity: 0.8;
 }
 </style>
-
-<div class="topo-romanus">
-    <h1>ROMANUS 5.4.1</h1>
-</div>
 """, unsafe_allow_html=True)
 
+# =========================================
+# TOPO
+# =========================================
+imagem_path = "assets/gladiador.png"
 
-# =========================
-# SESSION STATE
-# =========================
-if "historico" not in st.session_state:
-    st.session_state.historico = []
+if os.path.exists(imagem_path):
+    imagem = Image.open(imagem_path)
+    st.image(imagem, width=220)
 
-if "imagem_upload" not in st.session_state:
-    st.session_state.imagem_upload = None
+st.markdown('<div class="romanus-title">ROMANUS</div>', unsafe_allow_html=True)
+st.markdown('<div class="romanus-subtitle">A IA que não passa pano.</div>', unsafe_allow_html=True)
+st.markdown('<div class="romanus-slogan">Respostas diretas. Soluções reais.</div>', unsafe_allow_html=True)
 
+# =========================================
+# ENTRADA DO USUÁRIO
+# =========================================
+pergunta = st.text_area("Digite sua ordem:", height=120, placeholder="O que você precisa resolver hoje?")
 
-# =========================
-# RENDERIZAÇÃO DO CHAT
-# =========================
-st.markdown('<div class="bloco-chat">', unsafe_allow_html=True)
+if st.button("INICIAR"):
+    if not pergunta.strip():
+        st.warning("Digite uma pergunta.")
+    else:
+        with st.spinner("ROMANUS analisando a base..."):
+            resposta = gerar_resposta(pergunta)
 
-for item in st.session_state.historico:
-    role = "user" if item["tipo"] == "usuario" else "assistant"
-    with st.chat_message(role):
-        st.markdown(item["texto"])
-
-st.markdown("</div>", unsafe_allow_html=True)
-
-
-# =========================
-# UPLOAD DE IMAGEM
-# =========================
-with st.expander("📷 Enviar imagem", expanded=False):
-    uploaded_file = st.file_uploader(
-        "Escolha uma imagem",
-        type=["jpg", "jpeg", "png"]
-    )
-
-    if uploaded_file is not None:
-        st.session_state.imagem_upload = Image.open(uploaded_file)
-        st.image(st.session_state.imagem_upload, caption="Imagem enviada", use_container_width=True)
-
-imagem = st.session_state.imagem_upload
-
-
-# =========================
-# INPUT DO CHAT
-# =========================
-pergunta = st.chat_input("Pergunte à ROMANUS...")
-
-if pergunta:
-    pergunta = pergunta.strip()
-
-    if pergunta:
-        st.session_state.historico.append({"tipo": "usuario", "texto": pergunta})
-
-        with st.chat_message("user"):
-            st.markdown(pergunta)
-
-        with st.spinner("Processando..."):
-            texto_resposta = gerar_resposta(pergunta, imagem)
-
-        st.session_state.historico.append({"tipo": "ia", "texto": texto_resposta})
-
-        with st.chat_message("assistant"):
-            st.markdown(texto_resposta)
-
-        st.markdown("""
-        <script>
-        function scrollToBottom() {
-            window.scrollTo(0, document.body.scrollHeight);
-        }
-
-        window.addEventListener("load", scrollToBottom);
-        setTimeout(scrollToBottom, 200);
-        setTimeout(scrollToBottom, 600);
-        setTimeout(scrollToBottom, 1000);
-        </script>
-        """, unsafe_allow_html=True)
+        st.markdown("### Resposta")
+        st.write(resposta)
