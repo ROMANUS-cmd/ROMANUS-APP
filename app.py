@@ -20,8 +20,18 @@ st.set_page_config(
 BASE_CONHECIMENTO_DIR = "base_conhecimento"
 ARQUIVOS_SUPORTADOS = (".txt", ".pdf")
 MODELO_GEMINI = "gemini-2.5-flash"
-TOP_K = 5
-JANELA_TRECHO = 2600
+
+TAMANHO_CHUNK = 1800
+SOBREPOSICAO_CHUNK = 250
+TOP_CHUNKS = 12
+
+PALAVRAS_IGNORADAS = {
+    "a", "o", "e", "de", "da", "do", "das", "dos", "um", "uma",
+    "em", "por", "para", "com", "sem", "que", "como", "qual",
+    "quais", "onde", "quando", "isso", "essa", "esse", "sobre",
+    "as", "os", "ao", "aos", "na", "no", "nas", "nos",
+    "bom", "boa", "dia", "tarde", "noite", "oi", "ola", "olá"
+}
 
 # =========================================================
 # PROMPT PRINCIPAL
@@ -73,6 +83,7 @@ Se o sistema fornecer trechos de documentos:
 - trate isso como fonte principal;
 - responda com fidelidade ao conteúdo;
 - cite o nome do arquivo, se disponível;
+- cite artigo, item, capítulo ou parágrafo, se estiverem localizados no trecho;
 - diferencie claramente:
   a) texto expresso;
   b) resumo fiel;
@@ -119,14 +130,6 @@ A resposta deve ser:
 - sem bajulação;
 - sem excesso de texto.
 
-Evite:
-- frases vagas;
-- respostas genéricas;
-- "depende" sem explicar do que depende;
-- enrolação;
-- falsa segurança;
-- usar referência periférica como se fosse fundamento principal.
-
 ESTRUTURA PADRÃO
 Quando houver base útil, use preferencialmente:
 
@@ -134,7 +137,7 @@ RESPOSTA DIRETA:
 [resposta objetiva]
 
 FUNDAMENTO:
-[arquivo consultado e artigo/item se localizados]
+[arquivo consultado e artigo/item/capítulo se localizados]
 
 GRAU DE CERTEZA:
 [expresso na base / conclusão parcial / insuficiente]
@@ -142,17 +145,9 @@ GRAU DE CERTEZA:
 OBSERVAÇÃO TÉCNICA:
 [apenas se necessário]
 
-CONDUTA EM PERGUNTAS JURÍDICAS E NORMATIVAS
-- responda apenas com o que puder sustentar;
-- cite fundamento sempre que possível;
-- diferencie texto localizado de interpretação;
-- nunca invente artigo;
-- nunca use tom categórico sem base;
-- quando a pergunta pedir um rol, uma lista ou uma definição, só afirme isso se o rol, a lista ou a definição estiver expressamente localizado.
-
 INSTRUÇÃO ESPECIAL PARA ENUMERAÇÕES
 Se a pergunta pedir lista, rol, definição ou enumeração:
-- procure no trecho localizado expressões como:
+- procure expressões como:
   "constituem", "são", "compreendem", "incluem", "fica instituído", "deverá ser levado em consideração", "classificam-se", "são medidas", "são requisitos";
 - se houver enumeração expressa, reproduza a lista fielmente;
 - se houver incisos, preserve a estrutura;
@@ -250,7 +245,7 @@ def criar_cliente():
     return genai.Client(api_key=api_key)
 
 # =========================================================
-# LEITURA DE ARQUIVOS
+# LEITURA DOS ARQUIVOS
 # =========================================================
 def extrair_texto_txt(caminho_txt: str) -> str:
     try:
@@ -305,20 +300,12 @@ def carregar_base_local():
     return base
 
 # =========================================================
-# APOIO DE BUSCA
+# FUNÇÕES DE APOIO
 # =========================================================
-PALAVRAS_IGNORADAS = {
-    "a", "o", "e", "de", "da", "do", "das", "dos", "um", "uma",
-    "em", "por", "para", "com", "sem", "que", "como", "qual",
-    "quais", "onde", "quando", "isso", "essa", "esse", "sobre",
-    "bom", "boa", "dia", "tarde", "noite", "oi", "ola", "olá",
-    "as", "os", "ao", "aos", "na", "no", "nas", "nos"
-}
-
 def normalizar_termos(texto: str):
     return [
         t for t in re.findall(r"\w+", (texto or "").lower())
-        if len(t) >= 3 and t not in PALAVRAS_IGNORADAS
+        if len(t) >= 2 and t not in PALAVRAS_IGNORADAS
     ]
 
 def pergunta_pede_lista(pergunta: str) -> bool:
@@ -330,67 +317,26 @@ def pergunta_pede_lista(pergunta: str) -> bool:
     ]
     return any(g in p for g in gatilhos)
 
-def score_nome_arquivo(nome: str, pergunta: str) -> int:
-    score = 0
-    nome_lower = nome.lower()
-    pergunta_lower = pergunta.lower()
+def dividir_em_chunks(texto: str, tamanho: int = TAMANHO_CHUNK, sobreposicao: int = SOBREPOSICAO_CHUNK):
+    if not texto:
+        return []
 
-    palavras_fortes = [
-        "decreto", "lei", "regulamento", "instrução", "it",
-        "norma", "anexo", "quadro", "tabela", "medidas",
-        "segurança", "incêndio", "capítulo", "artigo"
-    ]
+    texto = texto.strip()
+    chunks = []
 
-    for palavra in palavras_fortes:
-        if palavra in nome_lower and palavra in pergunta_lower:
-            score += 20
+    inicio = 0
+    while inicio < len(texto):
+        fim = min(len(texto), inicio + tamanho)
+        chunk = texto[inicio:fim].strip()
+        if chunk:
+            chunks.append(chunk)
 
-    if pergunta_pede_lista(pergunta):
-        for palavra in ["anexo", "quadro", "tabela", "medidas", "regulamento", "decreto"]:
-            if palavra in nome_lower:
-                score += 18
+        if fim >= len(texto):
+            break
 
-    return score
+        inicio = max(0, fim - sobreposicao)
 
-def localizar_melhor_posicao(texto: str, pergunta: str) -> int:
-    texto_lower = (texto or "").lower()
-    termos = normalizar_termos(pergunta)
-
-    if not termos:
-        return 0
-
-    posicoes = []
-
-    for termo in termos:
-        pos = texto_lower.find(termo)
-        if pos != -1:
-            posicoes.append(pos)
-
-    if posicoes:
-        return min(posicoes)
-
-    padroes_fortes = [
-        "constituem", "são medidas", "medidas de segurança contra incêndio",
-        "capítulo", "artigo", "art.", "incluem", "compreendem"
-    ]
-
-    for padrao in padroes_fortes:
-        pos = texto_lower.find(padrao)
-        if pos != -1:
-            return pos
-
-    return 0
-
-def extrair_trecho_relevante(texto: str, pergunta: str, janela: int = JANELA_TRECHO) -> str:
-    texto_limpo = texto or ""
-    if not texto_limpo.strip():
-        return ""
-
-    pos = localizar_melhor_posicao(texto_limpo, pergunta)
-    inicio = max(0, pos - 700)
-    fim = min(len(texto_limpo), pos + janela)
-
-    return texto_limpo[inicio:fim].strip()
+    return chunks
 
 def extrair_referencia_local(texto: str):
     referencia = ""
@@ -414,90 +360,138 @@ def extrair_referencia_local(texto: str):
 
     return referencia
 
-# =========================================================
-# BUSCA NA BASE
-# =========================================================
-def buscar_na_base(pergunta: str, top_k: int = TOP_K):
-    base = carregar_base_local()
-    if not base:
-        return []
+def score_nome_arquivo(nome: str, pergunta: str) -> int:
+    score = 0
+    nome_lower = nome.lower()
+    pergunta_lower = pergunta.lower()
 
+    palavras_fortes = [
+        "decreto", "lei", "regulamento", "instrução", "it",
+        "norma", "anexo", "quadro", "tabela", "medidas",
+        "segurança", "incêndio", "capítulo", "artigo"
+    ]
+
+    for palavra in palavras_fortes:
+        if palavra in nome_lower and palavra in pergunta_lower:
+            score += 18
+
+    if pergunta_pede_lista(pergunta):
+        for palavra in ["anexo", "quadro", "tabela", "medidas", "regulamento", "decreto"]:
+            if palavra in nome_lower:
+                score += 16
+
+    return score
+
+def score_chunk(chunk: str, arquivo: str, pergunta: str) -> int:
+    chunk_lower = chunk.lower()
     termos = normalizar_termos(pergunta)
+    score = 0
+
+    for termo in termos:
+        score += chunk_lower.count(termo) * 4
+
+    score += score_nome_arquivo(arquivo, pergunta)
+
+    if pergunta_pede_lista(pergunta):
+        gatilhos_lista = [
+            "constituem", "incluem", "compreendem", "são medidas",
+            "medidas de segurança contra incêndio",
+            "deverá ser levado em consideração",
+            "i -", "ii -", "iii -", "iv -", "v -", "vi -"
+        ]
+        for g in gatilhos_lista:
+            if g in chunk_lower:
+                score += 25
+
+    if "decreto" in pergunta.lower() and "decreto" in arquivo.lower():
+        score += 40
+
+    if "medidas de segurança contra incêndio" in chunk_lower:
+        score += 35
+
+    if "artigo 20" in chunk_lower or "art. 20" in chunk_lower:
+        score += 40
+
+    if "capítulo viii" in chunk_lower or "capitulo viii" in chunk_lower:
+        score += 20
+
+    return score
+
+# =========================================================
+# INDEXAÇÃO DE TODOS OS ARQUIVOS EM CHUNKS
+# =========================================================
+@st.cache_data(show_spinner=False)
+def indexar_base_em_chunks():
+    base = carregar_base_local()
+    indice = []
+
+    for doc in base:
+        chunks = dividir_em_chunks(doc["texto"], TAMANHO_CHUNK, SOBREPOSICAO_CHUNK)
+
+        for i, chunk in enumerate(chunks, start=1):
+            indice.append({
+                "arquivo": doc["arquivo"],
+                "chunk_id": i,
+                "texto": chunk,
+                "texto_lower": chunk.lower()
+            })
+
+    return indice
+
+# =========================================================
+# BUSCA GLOBAL EM TODOS OS TRECHOS DE TODOS OS ARQUIVOS
+# =========================================================
+def buscar_trechos_na_base(pergunta: str, top_chunks: int = TOP_CHUNKS):
+    indice = indexar_base_em_chunks()
     resultados = []
 
-    for item in base:
-        nome = item["arquivo"].lower()
-        texto = item["texto_lower"]
-        score = 0
-
-        for termo in termos:
-            score += nome.count(termo) * 30
-            score += texto.count(termo) * 4
-
-        if pergunta.lower().strip() and pergunta.lower().strip() in texto:
-            score += 120
-
-        score += score_nome_arquivo(item["arquivo"], pergunta)
-
-        if pergunta_pede_lista(pergunta):
-            gatilhos_lista = [
-                "constituem", "incluem", "compreendem", "são medidas",
-                "medidas de segurança", "deverá ser levado em consideração",
-                "i -", "ii -", "iii -", "iv -"
-            ]
-            for g in gatilhos_lista:
-                if g in texto:
-                    score += 22
-
-        if "decreto" in pergunta.lower() and "decreto" in nome:
-            score += 50
+    for item in indice:
+        score = score_chunk(item["texto"], item["arquivo"], pergunta)
 
         if score > 0:
-            trecho = extrair_trecho_relevante(item["texto"], pergunta, janela=JANELA_TRECHO)
-            referencia = extrair_referencia_local(trecho)
-
             resultados.append({
                 "arquivo": item["arquivo"],
-                "texto": item["texto"],
-                "trecho": trecho,
+                "chunk_id": item["chunk_id"],
+                "trecho": item["texto"],
                 "score": score,
-                "referencia": referencia
+                "referencia": extrair_referencia_local(item["texto"])
             })
 
     resultados.sort(key=lambda x: x["score"], reverse=True)
-    return resultados[:top_k]
+    return resultados[:top_chunks]
 
-def montar_contexto(resultados, pergunta: str):
-    if not resultados:
+def montar_contexto(trechos, pergunta: str):
+    if not trechos:
         return "Nenhum conteúdo relevante foi localizado na base local."
 
+    alerta = ""
+    if pergunta_pede_lista(pergunta):
+        alerta = (
+            "[ATENÇÃO ESPECIAL]\n"
+            "A pergunta pede lista, enumeração, rol ou medidas. "
+            "Procure enumeração expressa e, se existir, reproduza fielmente.\n\n"
+        )
+
     blocos = []
-    for i, item in enumerate(resultados, start=1):
+    for i, item in enumerate(trechos, start=1):
         bloco = (
-            f"[DOCUMENTO {i}]\n"
+            f"[TRECHO {i}]\n"
             f"ARQUIVO: {item['arquivo']}\n"
+            f"CHUNK: {item['chunk_id']}\n"
             f"REFERÊNCIA LOCALIZADA: {item['referencia'] if item['referencia'] else 'não localizada'}\n"
-            f"TRECHO RELEVANTE:\n{item['trecho']}\n"
+            f"TEXTO:\n{item['trecho']}\n"
         )
         blocos.append(bloco)
 
-    instrucao_pergunta = ""
-    if pergunta_pede_lista(pergunta):
-        instrucao_pergunta = (
-            "\n[ATENÇÃO ESPECIAL]\n"
-            "A pergunta do usuário pede lista, enumeração, rol ou medidas. "
-            "Procure por enumeração expressa no trecho e reproduza fielmente.\n"
-        )
-
-    return instrucao_pergunta + "\n\n".join(blocos)
+    return alerta + "\n\n".join(blocos)
 
 # =========================================================
 # GERAÇÃO DE RESPOSTA
 # =========================================================
 def gerar_resposta(pergunta: str, modo_estrito: bool = True):
     cliente = criar_cliente()
-    resultados = buscar_na_base(pergunta, TOP_K)
-    contexto = montar_contexto(resultados, pergunta)
+    trechos = buscar_trechos_na_base(pergunta, TOP_CHUNKS)
+    contexto = montar_contexto(trechos, pergunta)
 
     prompt_final = f"""
 {PROMPT_SISTEMA}
@@ -509,11 +503,11 @@ BASE LOCAL LOCALIZADA:
 {contexto}
 
 INSTRUÇÕES FINAIS DE EXECUÇÃO
-1. Priorize integralmente a base local.
-2. Se a base responder, responda com base nela.
+1. Considere que os trechos acima foram selecionados após consulta global em toda a base local.
+2. Priorize os trechos mais específicos e mais centrais ao tema.
 3. Cite os arquivos usados e a referência localizada, se houver.
 4. Não invente fundamento.
-5. Se a pergunta pedir lista, rol, enumeração, medidas ou requisitos, só apresente a lista se ela estiver expressamente visível no trecho.
+5. Se a pergunta pedir lista, rol, enumeração, medidas ou requisitos, só apresente a lista se ela estiver expressamente visível nos trechos.
 6. Se houver enumeração expressa, reproduza a enumeração fielmente.
 7. Se os trechos apenas mencionarem o tema, diga isso claramente.
 8. Não esconda limitação com texto bonito.
@@ -540,14 +534,14 @@ Se não houver base suficiente, use uma das fórmulas de insuficiência prevista
         if not texto:
             texto = "Não houve resposta textual do modelo."
 
-        if modo_estrito and not resultados:
+        if modo_estrito and not trechos:
             texto = "Não localizei base suficiente para responder com segurança."
 
         return {
             "ok": True,
             "texto": texto,
             "tempo": tempo,
-            "resultados": resultados,
+            "trechos": trechos,
             "erro": ""
         }
 
@@ -557,7 +551,7 @@ Se não houver base suficiente, use uma das fórmulas de insuficiência prevista
             "ok": False,
             "texto": "",
             "tempo": tempo,
-            "resultados": resultados,
+            "trechos": trechos,
             "erro": str(e)
         }
 
@@ -601,7 +595,7 @@ if st.button("INICIAR"):
     if not pergunta.strip():
         st.warning("Digite uma pergunta.")
     else:
-        with st.spinner("ROMANUS analisando a base..."):
+        with st.spinner("ROMANUS consultando toda a base..."):
             resultado = gerar_resposta(pergunta, modo_estrito=modo_estrito)
 
         if not resultado["ok"]:
@@ -615,14 +609,16 @@ if st.button("INICIAR"):
             )
 
         if mostrar_debug:
-            arquivos_usados = [r["arquivo"] for r in resultado.get("resultados", [])]
-            referencias = [r["referencia"] for r in resultado.get("resultados", []) if r.get("referencia")]
             base_total = carregar_base_local()
+            indice_total = indexar_base_em_chunks()
+            arquivos_usados = [t["arquivo"] for t in resultado.get("trechos", [])]
+            referencias = [t["referencia"] for t in resultado.get("trechos", []) if t.get("referencia")]
 
             debug_texto = (
                 f"Arquivos na base: {len(base_total)}\n"
-                f"Arquivos usados na busca: {len(arquivos_usados)}\n"
-                f"Lista de arquivos usados: {arquivos_usados if arquivos_usados else 'Nenhum'}\n"
+                f"Chunks totais indexados: {len(indice_total)}\n"
+                f"Trechos retornados para a resposta: {len(resultado.get('trechos', []))}\n"
+                f"Arquivos usados: {arquivos_usados if arquivos_usados else 'Nenhum'}\n"
                 f"Referências localizadas: {referencias if referencias else 'Nenhuma'}\n"
                 f"Modelo: {MODELO_GEMINI}\n"
                 f"Tempo de resposta: {resultado.get('tempo', 0)} s\n"
