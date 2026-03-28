@@ -4,17 +4,10 @@ import time
 import html
 import requests
 import streamlit as st
+from datetime import datetime
 from urllib.parse import urlparse, quote_plus
 from bs4 import BeautifulSoup
-from google import genai
 from pypdf import PdfReader
-
-# Playwright é opcional
-try:
-    from playwright.sync_api import sync_playwright
-    PLAYWRIGHT_DISPONIVEL = True
-except Exception:
-    PLAYWRIGHT_DISPONIVEL = False
 
 # =========================================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -30,7 +23,6 @@ st.set_page_config(
 # =========================================================
 BASE_CONHECIMENTO_DIR = "base_conhecimento"
 ARQUIVOS_SUPORTADOS = (".txt", ".pdf")
-MODELO_GEMINI = "gemini-2.5-flash"
 
 TAMANHO_CHUNK = 1800
 SOBREPOSICAO_CHUNK = 250
@@ -59,7 +51,12 @@ DOMINIOS_CONFIAVEIS = [
     "alesp.sp.gov.br",
     "bombeiros.sp.gov.br",
     "policiamilitar.sp.gov.br",
-    "lexml.gov.br"
+    "lexml.gov.br",
+    "ibge.gov.br",
+    "bcb.gov.br",
+    "receita.fazenda.gov.br",
+    "presidencia.gov.br",
+    "gov"
 ]
 
 HEADERS_PADRAO = {
@@ -69,147 +66,6 @@ HEADERS_PADRAO = {
         "Chrome/136.0 Safari/537.36"
     )
 }
-
-# =========================================================
-# PROMPT PRINCIPAL
-# =========================================================
-PROMPT_SISTEMA = """
-Você é ROMANUS, uma inteligência artificial técnica, objetiva e confiável.
-
-IDENTIDADE
-Seu nome é ROMANUS.
-Seu posicionamento é: "A IA que não passa pano."
-Seu papel é fornecer respostas diretas, técnicas, jurídicas, administrativas e operacionais, com máxima precisão e sem floreios.
-Seu estilo deve ser firme, claro, profissional, disciplinado e eficiente.
-
-MISSÃO
-Sua missão é responder prioritariamente com base na base local fornecida pelo sistema, com fidelidade documental e rigor técnico.
-Você deve buscar a fonte mais central, mais direta e mais específica para responder à pergunta.
-Você não deve responder com base em menções periféricas quando houver indício de que existe documento mais adequado.
-
-REGRAS ABSOLUTAS
-1. Nunca invente leis, artigos, itens, subitens, datas, normas, entendimentos, citações ou fatos.
-2. Nunca afirme que encontrou algo se isso não constar de forma real na base recebida.
-3. Nunca trate hipótese como fato.
-4. Nunca complete lacunas com suposição disfarçada de certeza.
-5. Nunca distorça o conteúdo localizado.
-6. Se não houver base suficiente, diga isso claramente.
-7. Se houver dúvida relevante, deixe a incerteza explícita.
-8. Sempre prefira precisão a velocidade.
-9. Sempre prefira resposta exata a texto longo e genérico.
-10. Sempre responda em português do Brasil.
-
-HIERARQUIA DE QUALIDADE DA FONTE
-Ao analisar a base, siga esta ordem de preferência:
-1. documento que define expressamente o conceito perguntado;
-2. documento que liste expressamente os requisitos, medidas, itens ou critérios perguntados;
-3. documento técnico específico do tema;
-4. norma geral relacionada;
-5. documento administrativo, procedimental, formulário, anexo de referência, índice, sumário ou menção lateral.
-
-REGRA DE PRIORIDADE DOCUMENTAL
-Se a pergunta pedir definição, lista, requisitos, medidas, critérios ou classificação:
-- priorize o documento que traga isso expressamente;
-- não use como fundamento principal um trecho que apenas menciona o tema;
-- não use sumário, índice, anexo citado sem conteúdo, nota lateral ou referência indireta como base principal;
-- não trate menção genérica como resposta suficiente;
-- se houver apenas menção indireta, diga claramente que a base não trouxe a definição/lista expressa.
-
-USO DA BASE LOCAL
-Se o sistema fornecer trechos de documentos:
-- trate isso como fonte principal;
-- responda com fidelidade ao conteúdo;
-- cite o nome do arquivo, se disponível;
-- cite artigo, item, capítulo ou parágrafo, se estiverem localizados no trecho;
-- diferencie claramente:
-  a) texto expresso;
-  b) resumo fiel;
-  c) interpretação mínima.
-
-QUANDO HOUVER TEXTO EXPRESSO
-Se a base trouxer resposta clara e direta:
-- responda de forma objetiva;
-- preserve o sentido original;
-- não acrescente requisito inexistente;
-- não amplie o texto além do que ele sustenta.
-
-QUANDO A BASE FOR PARCIAL
-Se a base trouxer apenas elementos relacionados:
-- diga expressamente que não há resposta literal completa;
-- apresente apenas conclusão parcial;
-- identifique que se trata de interpretação mínima;
-- não extrapole além do que o texto sustenta;
-- não transforme referência lateral em fundamento principal.
-
-QUANDO HOUVER CONFLITO ENTRE TRECHOS
-Se houver mais de um trecho:
-- prefira o mais específico;
-- prefira o mais central ao tema;
-- prefira o que contenha definição, lista, regra ou critério expresso;
-- descarte trechos meramente incidentais como fundamento principal.
-
-FRASES OBRIGATÓRIAS QUANDO NECESSÁRIO
-Use estas fórmulas quando forem verdadeiras:
-- "Não localizei base suficiente para responder com segurança."
-- "A base consultada não trouxe resposta literal para esse ponto."
-- "O texto localizado permite apenas conclusão parcial."
-- "Não é possível confirmar isso sem extrapolar a base."
-- "Não encontrei elemento suficiente para responder com precisão."
-- "Os trechos localizados apenas mencionam o tema, mas não trazem a definição/lista expressa."
-
-ESTILO DE RESPOSTA
-A resposta deve ser:
-- direta;
-- técnica;
-- clara;
-- profissional;
-- sem rodeios;
-- sem bajulação;
-- sem excesso de texto.
-
-ESTRUTURA PADRÃO
-Quando houver base útil, use preferencialmente:
-
-RESPOSTA DIRETA:
-[resposta objetiva]
-
-FUNDAMENTO:
-[arquivo consultado e artigo/item/capítulo se localizados]
-
-GRAU DE CERTEZA:
-[expresso na base / conclusão parcial / insuficiente]
-
-OBSERVAÇÃO TÉCNICA:
-[apenas se necessário]
-
-INSTRUÇÃO ESPECIAL PARA ENUMERAÇÕES
-Se a pergunta pedir lista, rol, definição ou enumeração:
-- procure expressões como:
-  "constituem", "são", "compreendem", "incluem", "fica instituído", "deverá ser levado em consideração", "classificam-se", "são medidas", "são requisitos";
-- se houver enumeração expressa, reproduza a lista fielmente;
-- se houver incisos, preserve a estrutura;
-- se não houver enumeração expressa, não invente a lista.
-
-PROIBIÇÕES
-É proibido:
-- criar citações falsas;
-- fingir pesquisa;
-- omitir incerteza;
-- esconder falta de base com texto bonito;
-- contradizer a base local sem explicar;
-- responder como se tivesse certeza quando não tem;
-- usar índice, sumário, título de anexo ou menção indireta como se fossem conteúdo normativo completo.
-
-REGRA DE OURO
-Na dúvida, seja honesta.
-Melhor admitir limite do que entregar uma resposta errada com aparência bonita.
-
-BORDÃO OPERACIONAL
-ROMANUS não passa pano.
-ROMANUS responde com base.
-ROMANUS não inventa.
-ROMANUS resolve.
-""".strip()
 
 # =========================================================
 # ESTILO VISUAL
@@ -272,15 +128,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================
-# CLIENTES
+# SESSÃO HTTP
 # =========================================================
-@st.cache_resource
-def criar_cliente():
-    api_key = st.secrets.get("GEMINI_API_KEY", "")
-    if not api_key:
-        raise ValueError("A chave GEMINI_API_KEY não foi encontrada no secrets.")
-    return genai.Client(api_key=api_key)
-
 @st.cache_resource
 def criar_sessao_http():
     sessao = requests.Session()
@@ -470,6 +319,84 @@ def base_local_suficiente(trechos):
     melhor_score = max(t.get("score", 0) for t in trechos)
     return melhor_score >= SCORE_MINIMO_BASE
 
+def escape_html(texto: str) -> str:
+    return html.escape(texto or "")
+
+# =========================================================
+# RESPOSTA DIRETA SEM IA
+# =========================================================
+def resposta_data_hora_local(pergunta: str):
+    p = (pergunta or "").lower().strip()
+
+    gatilhos_dia = [
+        "que dia é hoje",
+        "qual o dia de hoje",
+        "qual é o dia de hoje",
+        "data de hoje",
+        "hoje é que dia"
+    ]
+
+    gatilhos_hora = [
+        "que horas são",
+        "qual a hora",
+        "qual é a hora"
+    ]
+
+    agora = datetime.now()
+
+    if any(g in p for g in gatilhos_dia):
+        data_formatada = agora.strftime("%d/%m/%Y")
+        dia_semana = [
+            "segunda-feira", "terça-feira", "quarta-feira",
+            "quinta-feira", "sexta-feira", "sábado", "domingo"
+        ][agora.weekday()]
+        return (
+            "RESPOSTA DIRETA:\n"
+            f"Hoje é {data_formatada} ({dia_semana}).\n\n"
+            "FUNDAMENTO:\n"
+            "Data/hora do servidor da aplicação.\n\n"
+            "GRAU DE CERTEZA:\n"
+            "Direto do sistema."
+        )
+
+    if any(g in p for g in gatilhos_hora):
+        hora_formatada = agora.strftime("%H:%M:%S")
+        return (
+            "RESPOSTA DIRETA:\n"
+            f"Agora são {hora_formatada}.\n\n"
+            "FUNDAMENTO:\n"
+            "Relógio do servidor da aplicação.\n\n"
+            "GRAU DE CERTEZA:\n"
+            "Direto do sistema."
+        )
+
+    return None
+
+def montar_resposta_base_local_direta(pergunta: str, trechos: list):
+    if not trechos:
+        return "Não localizei base suficiente para responder com segurança."
+
+    melhor = trechos[0]
+    arquivo = melhor.get("arquivo", "arquivo não identificado")
+    referencia = melhor.get("referencia") or "não localizada"
+    trecho = normalizar_texto(melhor.get("trecho", ""))
+
+    if len(trecho) > 1800:
+        trecho = trecho[:1800].strip() + "..."
+
+    return (
+        "RESPOSTA DIRETA:\n"
+        "Localizei fundamento relevante na base local.\n\n"
+        "FUNDAMENTO:\n"
+        f"Arquivo: {arquivo}\n"
+        f"Referência: {referencia}\n"
+        f"Trecho: {trecho}\n\n"
+        "GRAU DE CERTEZA:\n"
+        "Base local suficiente.\n\n"
+        "OBSERVAÇÃO TÉCNICA:\n"
+        "Resposta montada diretamente a partir da base local, sem uso de modelo de IA."
+    )
+
 # =========================================================
 # BUSCA WEB
 # =========================================================
@@ -488,35 +415,12 @@ def limpar_texto_html(html_texto: str) -> str:
 
     return normalizar_texto(soup.get_text(separator=" ", strip=True))
 
-def extrair_texto_url_requests(url: str, timeout: int = 15) -> str:
-    sessao = criar_sessao_http()
-    resp = sessao.get(url, timeout=timeout)
-    resp.raise_for_status()
-    return limpar_texto_html(resp.text)
-
-def extrair_texto_url_playwright(url: str, timeout_ms: int = 20000) -> str:
-    if not PLAYWRIGHT_DISPONIVEL:
-        return ""
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-        page.goto(url, wait_until="networkidle", timeout=timeout_ms)
-        html_renderizado = page.content()
-        browser.close()
-
-    return limpar_texto_html(html_renderizado)
-
-def extrair_texto_url(url: str) -> str:
+def extrair_texto_url(url: str, timeout: int = 15) -> str:
     try:
-        texto = extrair_texto_url_requests(url)
-        if len(texto) >= MIN_TEXTO_WEB:
-            return texto
-    except Exception:
-        pass
-
-    try:
-        texto = extrair_texto_url_playwright(url)
+        sessao = criar_sessao_http()
+        resp = sessao.get(url, timeout=timeout)
+        resp.raise_for_status()
+        texto = limpar_texto_html(resp.text)
         return texto
     except Exception:
         return ""
@@ -582,7 +486,7 @@ def buscar_na_internet(pergunta: str, max_links: int = TOP_LINKS_WEB):
             continue
 
         texto = extrair_texto_url(url)
-        if not texto:
+        if not texto or len(texto) < MIN_TEXTO_WEB:
             continue
 
         trecho = gerar_trecho_relevante(texto, pergunta)
@@ -605,22 +509,22 @@ def montar_resposta_web_direta(pergunta: str, resultados_web: list):
 
     linhas = []
     linhas.append("RESPOSTA DIRETA:")
-    linhas.append("Foram localizadas fontes web confiáveis relacionadas ao tema. Abaixo seguem os trechos relevantes, sem improviso e sem extrapolação.\n")
+    linhas.append("Foram localizadas fontes web confiáveis relacionadas ao tema. Seguem os trechos relevantes.\n")
 
     linhas.append("FUNDAMENTO:")
     for i, item in enumerate(resultados_web[:3], start=1):
-        linhas.append(f"{i}. {item['url']}")
+        linhas.append(f"{i}. Fonte: {item['url']}")
         linhas.append(f"Trecho relevante: {item['trecho']}\n")
 
     linhas.append("GRAU DE CERTEZA:")
-    linhas.append("Pesquisa web localizada; depende de conferência literal da fonte oficial.\n")
+    linhas.append("Pesquisa web direta; exige conferência literal da fonte oficial.\n")
 
     linhas.append("OBSERVAÇÃO TÉCNICA:")
-    linhas.append("A resposta acima foi montada diretamente a partir dos trechos coletados na internet, sem usar Gemini para pesquisar ou interpretar a web.")
+    linhas.append("Resposta montada por regras, sem uso de provedor de IA.")
     return "\n".join(linhas)
 
 # =========================================================
-# INDEXAÇÃO DE TODOS OS ARQUIVOS EM CHUNKS
+# INDEXAÇÃO EM CHUNKS
 # =========================================================
 @st.cache_data(show_spinner=False)
 def indexar_base_em_chunks():
@@ -641,7 +545,7 @@ def indexar_base_em_chunks():
     return indice
 
 # =========================================================
-# BUSCA GLOBAL EM TODOS OS TRECHOS DE TODOS OS ARQUIVOS
+# BUSCA GLOBAL NA BASE
 # =========================================================
 def buscar_trechos_na_base(pergunta: str, top_chunks: int = TOP_CHUNKS):
     indice = indexar_base_em_chunks()
@@ -662,86 +566,33 @@ def buscar_trechos_na_base(pergunta: str, top_chunks: int = TOP_CHUNKS):
     resultados.sort(key=lambda x: x["score"], reverse=True)
     return resultados[:top_chunks]
 
-def montar_contexto(trechos, pergunta: str):
-    if not trechos:
-        return "Nenhum conteúdo relevante foi localizado na base local."
-
-    alerta = ""
-    if pergunta_pede_lista(pergunta):
-        alerta = (
-            "[ATENÇÃO ESPECIAL]\n"
-            "A pergunta pede lista, enumeração, rol ou medidas. "
-            "Procure enumeração expressa e, se existir, reproduza fielmente.\n\n"
-        )
-
-    blocos = []
-    for i, item in enumerate(trechos, start=1):
-        bloco = (
-            f"[TRECHO {i}]\n"
-            f"ARQUIVO: {item['arquivo']}\n"
-            f"CHUNK: {item['chunk_id']}\n"
-            f"REFERÊNCIA LOCALIZADA: {item['referencia'] if item['referencia'] else 'não localizada'}\n"
-            f"TEXTO:\n{item['trecho']}\n"
-        )
-        blocos.append(bloco)
-
-    return alerta + "\n\n".join(blocos)
-
 # =========================================================
 # GERAÇÃO DE RESPOSTA
 # =========================================================
-def gerar_resposta_base_local_com_gemini(pergunta: str, trechos):
-    cliente = criar_cliente()
-    contexto = montar_contexto(trechos, pergunta)
-
-    prompt_final = f"""
-{PROMPT_SISTEMA}
-
-PERGUNTA DO USUÁRIO:
-{pergunta}
-
-BASE LOCAL LOCALIZADA:
-{contexto}
-
-INSTRUÇÕES FINAIS DE EXECUÇÃO
-1. Considere que os trechos acima foram selecionados após consulta global em toda a base local.
-2. Priorize os trechos mais específicos e mais centrais ao tema.
-3. Cite os arquivos usados e a referência localizada, se houver.
-4. Não invente fundamento.
-5. Se a pergunta pedir lista, rol, enumeração, medidas ou requisitos, só apresente a lista se ela estiver expressamente visível nos trechos.
-6. Se houver enumeração expressa, reproduza a enumeração fielmente.
-7. Se os trechos apenas mencionarem o tema, diga isso claramente.
-8. Não esconda limitação com texto bonito.
-9. Não use sumário, índice ou menção indireta como fundamento principal.
-10. Se houver um trecho mais específico que outro, prefira o mais específico.
-
-Se não houver base suficiente, use uma das fórmulas de insuficiência previstas no prompt.
-""".strip()
-
-    resposta = cliente.models.generate_content(
-        model=MODELO_GEMINI,
-        contents=prompt_final
-    )
-
-    texto = ""
-    if hasattr(resposta, "text") and resposta.text:
-        texto = resposta.text.strip()
-
-    if not texto:
-        texto = "Não houve resposta textual do modelo."
-
-    return texto
-
 def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool = False):
     inicio = time.time()
-    trechos = buscar_trechos_na_base(pergunta, TOP_CHUNKS)
 
     try:
+        # 0) respostas diretas do sistema
+        resposta_sistema = resposta_data_hora_local(pergunta)
+        if resposta_sistema:
+            tempo = round(time.time() - inicio, 2)
+            return {
+                "ok": True,
+                "texto": resposta_sistema,
+                "tempo": tempo,
+                "trechos": [],
+                "erro": "",
+                "origem": "sistema",
+                "fontes_web": []
+            }
+
+        # 1) base local
+        trechos = buscar_trechos_na_base(pergunta, TOP_CHUNKS)
         base_suficiente = base_local_suficiente(trechos)
 
-        # 1) Só usa base local se ela for realmente suficiente
         if base_suficiente:
-            texto = gerar_resposta_base_local_com_gemini(pergunta, trechos)
+            texto = montar_resposta_base_local_direta(pergunta, trechos)
             tempo = round(time.time() - inicio, 2)
 
             return {
@@ -754,7 +605,7 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
                 "fontes_web": []
             }
 
-        # 2) Se estiver em modo estrito, para aqui
+        # 2) modo estrito
         if modo_estrito:
             tempo = round(time.time() - inicio, 2)
             return {
@@ -767,7 +618,7 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
                 "fontes_web": []
             }
 
-        # 3) Se a base não for suficiente e a pesquisa web estiver ligada, vai para a internet
+        # 3) internet direta
         if pesquisar_web:
             resultados_web = buscar_na_internet(pergunta, max_links=TOP_LINKS_WEB)
 
@@ -802,7 +653,7 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
             "ok": False,
             "texto": "",
             "tempo": tempo,
-            "trechos": trechos,
+            "trechos": [],
             "erro": str(e),
             "origem": "erro",
             "fontes_web": []
@@ -865,7 +716,7 @@ if st.button("INICIAR"):
         else:
             st.markdown("### Resposta")
             st.markdown(
-                f'<div class="bloco-resposta">{html.escape(resultado["texto"])}</div>',
+                f'<div class="bloco-resposta">{escape_html(resultado["texto"])}</div>',
                 unsafe_allow_html=True
             )
 
@@ -892,16 +743,14 @@ if st.button("INICIAR"):
                 f"Referências localizadas: {referencias if referencias else 'Nenhuma'}\n"
                 f"Melhor score encontrado: {melhor_score}\n"
                 f"Score mínimo para considerar a base suficiente: {SCORE_MINIMO_BASE}\n"
-                f"Modelo: {MODELO_GEMINI}\n"
                 f"Tempo de resposta: {resultado.get('tempo', 0)} s\n"
                 f"Modo estrito: {'Ligado' if modo_estrito else 'Desligado'}\n"
                 f"Pesquisa web: {'Ligada' if pesquisar_web else 'Desligada'}\n"
-                f"Origem final da resposta: {resultado.get('origem', 'desconhecida')}\n"
-                f"Playwright disponível: {'Sim' if PLAYWRIGHT_DISPONIVEL else 'Não'}"
+                f"Origem final da resposta: {resultado.get('origem', 'desconhecida')}"
             )
 
             st.markdown("### Diagnóstico")
             st.markdown(
-                f'<div class="debug-box">{html.escape(debug_texto)}</div>',
+                f'<div class="debug-box">{escape_html(debug_texto)}</div>',
                 unsafe_allow_html=True
             )
