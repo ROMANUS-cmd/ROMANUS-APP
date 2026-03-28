@@ -4,7 +4,7 @@ import time
 import html
 import unicodedata
 from datetime import datetime
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote_plus, urlparse, unquote
 
 import requests
 import streamlit as st
@@ -29,19 +29,21 @@ ARQUIVOS_SUPORTADOS = (".txt", ".pdf")
 
 TAMANHO_CHUNK = 1800
 SOBREPOSICAO_CHUNK = 250
-TOP_DOCS = 6
-TOP_CHUNKS = 10
-TOP_LINKS_WEB = 5
+TOP_DOCS = 8
+TOP_CHUNKS = 12
+TOP_LINKS_WEB = 8
 MIN_TEXTO_WEB = 180
 SCORE_MINIMO_BASE = 35
 SCORE_MINIMO_WEB = 2
+TIMEOUT_PADRAO = 18
 
 PALAVRAS_IGNORADAS = {
     "a", "o", "e", "de", "da", "do", "das", "dos", "um", "uma",
     "em", "por", "para", "com", "sem", "que", "como", "qual",
     "quais", "onde", "quando", "isso", "essa", "esse", "sobre",
     "as", "os", "ao", "aos", "na", "no", "nas", "nos",
-    "bom", "boa", "dia", "tarde", "noite", "oi", "ola", "olá"
+    "bom", "boa", "dia", "tarde", "noite", "oi", "ola", "olá",
+    "me", "diga", "pesquise", "internet", "quero", "saber"
 }
 
 PALAVRAS_TECNICAS_BASE = {
@@ -52,7 +54,10 @@ PALAVRAS_TECNICAS_BASE = {
     "sprinkler", "segurança contra incêndio", "seguranca contra incendio",
     "cbpmesp", "pmesp", "chuveiros", "chuveiro", "fumaca", "fumaça",
     "saida de emergencia", "saída de emergência", "sinalizacao",
-    "sinalização", "mangotinhos", "carga de incendio", "carga de incêndio"
+    "sinalização", "mangotinhos", "carga de incendio", "carga de incêndio",
+    "avcb", "clcb", "brigada", "detecção", "deteccao", "alarme",
+    "resistencia ao fogo", "compartimentacao", "lotacao", "lotação",
+    "saidas", "edificacao", "edificacao", "proteção passiva", "protecao passiva"
 }
 
 DOMINIOS_CONFIAVEIS = [
@@ -62,7 +67,10 @@ DOMINIOS_CONFIAVEIS = [
     "camara.leg.br",
     "senado.leg.br",
     "stf.jus.br",
+    "stj.jus.br",
     "cnj.jus.br",
+    "tst.jus.br",
+    "tre-sp.jus.br",
     "sp.gov.br",
     "alesp.sp.gov.br",
     "bombeiros.sp.gov.br",
@@ -71,10 +79,52 @@ DOMINIOS_CONFIAVEIS = [
     "ibge.gov.br",
     "bcb.gov.br",
     "presidencia.gov.br",
+    "receita.fazenda.gov.br",
     "wikipedia.org",
-    "brasilescola.uol.com.br",
+    "wikidata.org",
+    "britannica.com",
+    "encyclopedia.com",
+    "bbc.com",
+    "reuters.com",
+    "apnews.com",
+    "g1.globo.com",
+    "uol.com.br",
     "mundoeducacao.uol.com.br",
-    "britannica.com"
+    "brasilescola.uol.com.br",
+    "cnnbrasil.com.br",
+    "nexo.jor.br",
+    "worldbank.org",
+    "imf.org",
+    "who.int",
+    "un.org",
+    "unesco.org",
+    "ourworldindata.org",
+    "nih.gov",
+    "cdc.gov",
+    "europa.eu",
+    "consilium.europa.eu",
+    "ec.europa.eu"
+]
+
+DOMINIOS_ALTISSIMA_CONFIANCA = [
+    "gov.br",
+    "planalto.gov.br",
+    "in.gov.br",
+    "camara.leg.br",
+    "senado.leg.br",
+    "stf.jus.br",
+    "sp.gov.br",
+    "alesp.sp.gov.br",
+    "bombeiros.sp.gov.br",
+    "ibge.gov.br",
+    "bcb.gov.br",
+    "presidencia.gov.br",
+    "wikipedia.org",
+    "britannica.com",
+    "reuters.com",
+    "apnews.com",
+    "who.int",
+    "un.org"
 ]
 
 MAPA_ASSUNTOS_PRIORITARIOS = {
@@ -86,7 +136,10 @@ MAPA_ASSUNTOS_PRIORITARIOS = {
     "hidrantes": ["it 22", "sistemas de hidrantes e de mangotinhos"],
     "mangotinhos": ["it 22", "sistemas de hidrantes e de mangotinhos"],
     "chuveiros automaticos": ["it 23", "sistemas de chuveiros automaticos"],
-    "controle de fumaca": ["it 15", "controle de fumaca"]
+    "controle de fumaca": ["it 15", "controle de fumaca"],
+    "brigada": ["it 17", "brigada de incendio"],
+    "loteacao": ["it 34", "hidrantes urbanos"],
+    "loteamento": ["it 34", "hidrantes urbanos"]
 }
 
 HEADERS_PADRAO = {
@@ -94,7 +147,8 @@ HEADERS_PADRAO = {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/136.0 Safari/537.36"
-    )
+    ),
+    "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8"
 }
 
 # =========================================================
@@ -154,6 +208,14 @@ st.markdown("""
     font-size: 14px;
     white-space: pre-wrap;
 }
+
+.fonte-box {
+    border: 1px solid #e3e3e3;
+    border-radius: 10px;
+    padding: 12px;
+    background: #fff;
+    margin-bottom: 10px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -183,6 +245,12 @@ def normalizar_termos(texto: str):
         t for t in re.findall(r"\w+", texto_norm(texto))
         if len(t) >= 2 and t not in PALAVRAS_IGNORADAS
     ]
+
+def limitar_texto(texto: str, max_chars: int = 1200) -> str:
+    texto = normalizar_texto(texto)
+    if len(texto) <= max_chars:
+        return texto
+    return texto[:max_chars].rstrip() + "..."
 
 def pergunta_pede_lista(pergunta: str) -> bool:
     p = texto_norm(pergunta)
@@ -240,8 +308,36 @@ def pergunta_geral_web(pergunta: str) -> bool:
         "quando morreu",
         "biografia",
         "historia de",
-        "história de"
+        "história de",
+        "quem e o presidente",
+        "quem e o atual presidente",
+        "qual o nome do presidente",
+        "qual e o nome do presidente",
+        "quem e o governador",
+        "qual o nome do governador",
+        "qual e o nome do governador",
+        "quem e o ministro",
+        "qual o nome do ministro",
+        "qual e o nome do ministro",
+        "quem e o prefeito",
+        "qual o nome do prefeito",
+        "qual e o nome do prefeito",
+        "presidente da china",
+        "presidente do brasil",
+        "presidente dos estados unidos",
+        "valor atual",
+        "cotacao",
+        "cotação",
+        "noticia",
+        "notícia",
+        "resultado do jogo",
+        "quem ganhou",
+        "placar",
+        "previsao do tempo",
+        "previsão do tempo",
+        "temperatura"
     ]
+
     return any(g in p for g in gatilhos)
 
 def detectar_assunto_prioritario(pergunta: str):
@@ -249,12 +345,16 @@ def detectar_assunto_prioritario(pergunta: str):
 
     for chave, pistas in MAPA_ASSUNTOS_PRIORITARIOS.items():
         if chave in p:
-            return {
-                "chave": chave,
-                "pistas": pistas
-            }
+            return {"chave": chave, "pistas": pistas}
 
     return None
+
+def eh_url_valida(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+    except Exception:
+        return False
 
 # =========================================================
 # SESSÃO HTTP
@@ -546,7 +646,7 @@ def score_chunk(chunk: str, arquivo: str, pergunta: str, ref: dict) -> int:
     if pergunta_pede_lista(pergunta):
         gatilhos_lista = [
             "constituem", "incluem", "compreendem", "sao medidas",
-            "devera ser levado em consideracao",
+            "devera ser levado em consideracao", "devera ser levado em consideração",
             "i -", "ii -", "iii -", "iv -", "v -", "vi -"
         ]
         for g in gatilhos_lista:
@@ -671,7 +771,7 @@ def base_local_suficiente(trechos, pergunta: str, ref: dict):
         if melhor_score >= 40:
             return True
 
-    minimo_termos = 1 if len(termos) == 1 else 2
+    minimo_termos = 1 if len(termos) <= 1 else 2
     return melhor_score >= SCORE_MINIMO_BASE and termos_presentes >= minimo_termos
 
 def montar_resposta_base_local_direta(pergunta: str, trechos: list, houve_apoio_web: bool = False):
@@ -681,10 +781,7 @@ def montar_resposta_base_local_direta(pergunta: str, trechos: list, houve_apoio_
     melhor = trechos[0]
     arquivo = melhor.get("arquivo", "arquivo não identificado")
     referencia = melhor.get("referencia") or "não localizada"
-    trecho = normalizar_texto(melhor.get("trecho", ""))
-
-    if len(trecho) > 1600:
-        trecho = trecho[:1600].strip() + "..."
+    trecho = limitar_texto(melhor.get("trecho", ""), 1600)
 
     observacao = "Resposta montada diretamente a partir da base local."
     if houve_apoio_web:
@@ -784,17 +881,60 @@ def dominio_confiavel(url: str) -> bool:
     except Exception:
         return False
 
+def dominio_altissima_confianca(url: str) -> bool:
+    try:
+        host = urlparse(url).netloc.lower().replace("www.", "")
+        return any(
+            host == d.replace("www.", "") or host.endswith("." + d.replace("www.", ""))
+            for d in DOMINIOS_ALTISSIMA_CONFIANCA
+        )
+    except Exception:
+        return False
+
+def normalizar_link_resultado_busca(href: str) -> str:
+    if not href:
+        return ""
+
+    href = href.strip()
+
+    if href.startswith("//"):
+        href = "https:" + href
+
+    if href.startswith("/"):
+        m = re.search(r"[?&](uddg|rut)=([^&]+)", href)
+        if m:
+            return unquote(m.group(2))
+        return ""
+
+    if href.startswith("http://") or href.startswith("https://"):
+        try:
+            parsed = urlparse(href)
+            if "duckduckgo.com" in parsed.netloc:
+                m = re.search(r"[?&](uddg|rut)=([^&]+)", href)
+                if m:
+                    return unquote(m.group(2))
+            return href
+        except Exception:
+            return ""
+
+    return ""
+
 def limpar_texto_html(html_texto: str) -> str:
     soup = BeautifulSoup(html_texto, "html.parser")
-    for tag in soup(["script", "style", "noscript", "header", "footer", "nav", "aside"]):
+    for tag in soup(["script", "style", "noscript", "header", "footer", "nav", "aside", "form"]):
         tag.decompose()
     return normalizar_texto(soup.get_text(separator=" ", strip=True))
 
-def extrair_texto_url(url: str, timeout: int = 15) -> str:
+def extrair_texto_url(url: str, timeout: int = TIMEOUT_PADRAO) -> str:
     try:
         sessao = criar_sessao_http()
-        resp = sessao.get(url, timeout=timeout)
+        resp = sessao.get(url, timeout=timeout, allow_redirects=True)
         resp.raise_for_status()
+
+        content_type = (resp.headers.get("Content-Type") or "").lower()
+        if "pdf" in content_type:
+            return ""
+
         return limpar_texto_html(resp.text)
     except Exception:
         return ""
@@ -803,7 +943,7 @@ def gerar_trecho_relevante(texto: str, pergunta: str, tamanho: int = 1200) -> st
     if not texto:
         return ""
 
-    termos = [t.lower() for t in re.findall(r"\w+", texto_norm(pergunta)) if len(t) >= 4]
+    termos = [t.lower() for t in re.findall(r"\w+", texto_norm(pergunta)) if len(t) >= 3]
     texto_lower = texto_norm(texto)
 
     melhor_pos = 0
@@ -822,8 +962,8 @@ def gerar_trecho_relevante(texto: str, pergunta: str, tamanho: int = 1200) -> st
     fim = min(len(texto), inicio + tamanho)
     return normalizar_texto(texto[inicio:fim])
 
-def score_resultado_web(texto: str, pergunta: str) -> int:
-    termos = [t.lower() for t in re.findall(r"\w+", texto_norm(pergunta)) if len(t) >= 4]
+def score_resultado_web(texto: str, pergunta: str, url: str = "") -> int:
+    termos = [t.lower() for t in re.findall(r"\w+", texto_norm(pergunta)) if len(t) >= 3]
     texto_lower = texto_norm(texto)
     score = 0
 
@@ -831,39 +971,45 @@ def score_resultado_web(texto: str, pergunta: str) -> int:
         if termo in texto_lower:
             score += 1
 
+    pergunta_n = texto_norm(pergunta)
+    if any(g in pergunta_n for g in ["presidente", "governador", "ministro", "prefeito"]):
+        if any(t in texto_lower for t in ["presidente", "governador", "ministro", "prefeito"]):
+            score += 2
+
+    if dominio_altissima_confianca(url):
+        score += 2
+    elif dominio_confiavel(url):
+        score += 1
+
     if not pergunta_tecnica_da_base(pergunta):
         score += 1
 
     return score
 
-def pesquisar_links_web(pergunta: str, max_links: int = TOP_LINKS_WEB):
+def pesquisar_links_web(consulta: str, max_links: int = TOP_LINKS_WEB):
     sessao = criar_sessao_http()
     links = []
 
-    try:
-        url = f"https://html.duckduckgo.com/html/?q={quote_plus(pergunta)}"
-        resp = sessao.get(url, timeout=20)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
-        for a in soup.select("a.result__a"):
-            href = a.get("href")
-            if href and href.startswith("http"):
-                links.append(href)
-    except Exception:
-        pass
+    urls_busca = [
+        f"https://html.duckduckgo.com/html/?q={quote_plus(consulta)}",
+        f"https://lite.duckduckgo.com/lite/?q={quote_plus(consulta)}"
+    ]
 
-    if not links:
+    for url in urls_busca:
         try:
-            url = f"https://lite.duckduckgo.com/lite/?q={quote_plus(pergunta)}"
-            resp = sessao.get(url, timeout=20)
+            resp = sessao.get(url, timeout=TIMEOUT_PADRAO)
             resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "html.parser")
+
             for a in soup.find_all("a", href=True):
-                href = a["href"]
-                if href.startswith("http"):
+                href = normalizar_link_resultado_busca(a.get("href", ""))
+                if href and eh_url_valida(href):
                     links.append(href)
         except Exception:
-            pass
+            continue
+
+        if links:
+            break
 
     vistos = set()
     unicos = []
@@ -874,16 +1020,51 @@ def pesquisar_links_web(pergunta: str, max_links: int = TOP_LINKS_WEB):
 
     return unicos[:max_links]
 
+def pesquisar_links_web_multicamadas(pergunta: str, max_links: int = TOP_LINKS_WEB):
+    consultas = [
+        pergunta,
+        f"site:gov.br {pergunta}",
+        f"site:wikipedia.org {pergunta}",
+        f"site:britannica.com {pergunta}",
+        f"site:reuters.com {pergunta}",
+        f"site:bbc.com {pergunta}",
+    ]
+
+    links_finais = []
+    vistos = set()
+
+    for consulta in consultas:
+        links = pesquisar_links_web(consulta, max_links=max_links)
+
+        for link in links:
+            if link not in vistos:
+                vistos.add(link)
+                links_finais.append(link)
+
+        if len(links_finais) >= max_links:
+            break
+
+    return links_finais[:max_links]
+
 def buscar_wikipedia_direto(pergunta: str):
     p = texto_norm(pergunta)
+    termo = ""
 
-    if not any(g in p for g in ["quem e ", "quem foi ", "o que e ", "o que foi "]):
-        return []
+    gatilhos_diretos = ["quem e ", "quem foi ", "o que e ", "o que foi "]
+    for g in gatilhos_diretos:
+        if g in p:
+            termo = p.replace(g, "").strip()
+            break
 
-    termo = p
-    for g in ["quem e ", "quem foi ", "o que e ", "o que foi "]:
-        termo = termo.replace(g, "")
-    termo = termo.strip()
+    if not termo:
+        m = re.search(r"(presidente|governador|ministro|prefeito)\s+(da|do|dos|das)\s+(.+)", p)
+        if m:
+            cargo = m.group(1).strip()
+            local = m.group(3).strip()
+            termo = f"{cargo} {local}"
+
+    if not termo and "capital" in p:
+        termo = p
 
     if not termo:
         return []
@@ -894,14 +1075,14 @@ def buscar_wikipedia_direto(pergunta: str):
             "https://pt.wikipedia.org/w/api.php"
             f"?action=query&list=search&srsearch={quote_plus(termo)}&format=json"
         )
-        resp = sessao.get(url, timeout=20)
+        resp = sessao.get(url, timeout=TIMEOUT_PADRAO)
         resp.raise_for_status()
         data = resp.json()
 
         itens = data.get("query", {}).get("search", [])
         resultados = []
 
-        for item in itens[:3]:
+        for item in itens[:4]:
             titulo = item.get("title", "")
             snippet = BeautifulSoup(item.get("snippet", ""), "html.parser").get_text(" ", strip=True)
             page_url = "https://pt.wikipedia.org/wiki/" + quote_plus(titulo.replace(" ", "_"))
@@ -917,6 +1098,47 @@ def buscar_wikipedia_direto(pergunta: str):
     except Exception:
         return []
 
+def buscar_wikidata_rotulo(pergunta: str):
+    p = texto_norm(pergunta)
+
+    termos = []
+    if "presidente da china" in p:
+        termos = ["Presidente da República Popular da China"]
+    elif "presidente do brasil" in p:
+        termos = ["Presidente do Brasil"]
+    elif "presidente dos estados unidos" in p:
+        termos = ["Presidente dos Estados Unidos"]
+
+    if not termos:
+        return []
+
+    resultados = []
+    try:
+        sessao = criar_sessao_http()
+        for termo in termos:
+            url = (
+                "https://www.wikidata.org/w/api.php"
+                f"?action=wbsearchentities&search={quote_plus(termo)}&language=pt&format=json"
+            )
+            resp = sessao.get(url, timeout=TIMEOUT_PADRAO)
+            resp.raise_for_status()
+            data = resp.json()
+
+            for item in data.get("search", [])[:2]:
+                label = item.get("label", "")
+                desc = item.get("description", "")
+                concept = item.get("concepturi", "")
+                resultados.append({
+                    "url": concept,
+                    "trecho": normalizar_texto(f"{label}. {desc}"),
+                    "texto": normalizar_texto(f"{label}. {desc}"),
+                    "score": 4
+                })
+    except Exception:
+        return []
+
+    return resultados
+
 def buscar_na_internet(pergunta: str, max_links: int = TOP_LINKS_WEB):
     resultados = []
 
@@ -924,7 +1146,11 @@ def buscar_na_internet(pergunta: str, max_links: int = TOP_LINKS_WEB):
     if wiki:
         resultados.extend(wiki)
 
-    links = pesquisar_links_web(pergunta, max_links=max_links)
+    wikidata = buscar_wikidata_rotulo(pergunta)
+    if wikidata:
+        resultados.extend(wikidata)
+
+    links = pesquisar_links_web_multicamadas(pergunta, max_links=max_links * 2)
 
     for url in links:
         if not dominio_confiavel(url):
@@ -935,7 +1161,7 @@ def buscar_na_internet(pergunta: str, max_links: int = TOP_LINKS_WEB):
             continue
 
         trecho = gerar_trecho_relevante(texto, pergunta)
-        score = score_resultado_web(trecho, pergunta)
+        score = score_resultado_web(trecho, pergunta, url)
 
         resultados.append({
             "url": url,
@@ -960,7 +1186,42 @@ def web_suficiente(resultados_web: list) -> bool:
     melhor_score = max(r.get("score", 0) for r in resultados_web)
     return melhor_score >= SCORE_MINIMO_WEB
 
-def montar_resposta_web_direta(resultados_web: list, houve_base_local: bool = False):
+def extrair_resposta_curta_web(pergunta: str, resultados_web: list) -> str:
+    if not resultados_web:
+        return ""
+
+    pergunta_n = texto_norm(pergunta)
+
+    padroes_nome = [
+        r"([A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+){1,4})"
+    ]
+
+    for item in resultados_web[:4]:
+        trecho = item.get("trecho", "")
+        if not trecho:
+            continue
+
+        if "presidente" in pergunta_n:
+            for padrao in padroes_nome:
+                nomes = re.findall(padrao, trecho)
+                nomes_filtrados = []
+                for nome in nomes:
+                    nome_limpo = normalizar_texto(nome)
+                    if len(nome_limpo.split()) >= 2:
+                        if nome_limpo.lower() not in {"república popular", "estados unidos"}:
+                            nomes_filtrados.append(nome_limpo)
+                if nomes_filtrados:
+                    return nomes_filtrados[0]
+
+        if "capital" in pergunta_n:
+            for padrao in padroes_nome:
+                nomes = re.findall(padrao, trecho)
+                if nomes:
+                    return normalizar_texto(nomes[0])
+
+    return ""
+
+def montar_resposta_web_direta(resultados_web: list, pergunta: str, houve_base_local: bool = False):
     if not resultados_web:
         return (
             "Não localizei base suficiente para responder com segurança.\n\n"
@@ -968,18 +1229,23 @@ def montar_resposta_web_direta(resultados_web: list, houve_base_local: bool = Fa
             "A pesquisa web não retornou fonte confiável utilizável."
         )
 
+    melhor = resultados_web[0]
+    resposta_curta = extrair_resposta_curta_web(pergunta, resultados_web)
+    trecho = limitar_texto(melhor.get("trecho", ""), 1000)
+    url = melhor.get("url", "")
+
     linhas = []
     linhas.append("RESPOSTA DIRETA:")
-    linhas.append("Foram localizadas fontes web confiáveis relacionadas ao tema.\n")
+    if resposta_curta:
+        linhas.append(f"Indício principal localizado: {resposta_curta}.\n")
+    else:
+        linhas.append("Localizei fonte web confiável com indício relevante para responder à pergunta.\n")
+
     linhas.append("FUNDAMENTO:")
-
-    for i, item in enumerate(resultados_web[:3], start=1):
-        linhas.append(f"{i}. Fonte: {item['url']}")
-        linhas.append(f"Trecho relevante: {item['trecho']}\n")
-
+    linhas.append(f"Fonte principal: {url}")
+    linhas.append(f"Trecho relevante: {trecho}\n")
     linhas.append("GRAU DE CERTEZA:")
-    linhas.append("Pesquisa web direta; exige conferência literal da fonte oficial.\n")
-
+    linhas.append("Pesquisa web suficiente para resposta preliminar; recomenda-se conferência na fonte.\n")
     linhas.append("OBSERVAÇÃO TÉCNICA:")
     obs = "Resposta montada por regras, sem uso de provedor de IA."
     if houve_base_local:
@@ -1036,6 +1302,9 @@ def decidir_origem_resposta(pergunta: str, trechos_base: list, resultados_web: l
 # =========================================================
 def gerar_resposta(pergunta: str, modo_estrito: bool = False, pesquisar_web: bool = True):
     inicio = time.time()
+
+    if modo_estrito:
+        pesquisar_web = False
 
     try:
         resposta_id = resposta_identidade(pergunta)
@@ -1098,7 +1367,11 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = False, pesquisar_web: boo
         elif origem == "base_com_apoio_web":
             texto = montar_resposta_base_local_direta(pergunta, trechos, houve_apoio_web=True)
         elif origem == "web_direta":
-            texto = montar_resposta_web_direta(resultados_web, houve_base_local=bool(trechos))
+            texto = montar_resposta_web_direta(
+                resultados_web,
+                pergunta,
+                houve_base_local=bool(trechos)
+            )
         else:
             if modo_estrito:
                 texto = "Não localizei base suficiente para responder com segurança."
@@ -1106,7 +1379,7 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = False, pesquisar_web: boo
                 texto = (
                     "Não localizei base suficiente para responder com segurança.\n\n"
                     "OBSERVAÇÃO TÉCNICA:\n"
-                    "Nem a base local nem a pesquisa web trouxeram fundamento confiável suficiente."
+                    "Após consultar a base local e múltiplas fontes web confiáveis, não localizei fundamento suficiente para responder com segurança."
                 )
 
         tempo = round(time.time() - inicio, 2)
@@ -1204,7 +1477,10 @@ if st.button("INICIAR"):
             if resultado.get("fontes_web"):
                 st.markdown("### Fontes web")
                 for fonte in resultado["fontes_web"][:5]:
-                    st.markdown(f"- {fonte}")
+                    st.markdown(
+                        f'<div class="fonte-box"><a href="{escape_html(fonte)}" target="_blank">{escape_html(fonte)}</a></div>',
+                        unsafe_allow_html=True
+                    )
 
         if mostrar_debug:
             base_total = carregar_base_local()
