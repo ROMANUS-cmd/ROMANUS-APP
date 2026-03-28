@@ -30,6 +30,7 @@ TOP_CHUNKS = 12
 TOP_LINKS_WEB = 5
 MIN_TEXTO_WEB = 500
 SCORE_MINIMO_BASE = 35
+SCORE_MINIMO_WEB = 2
 
 PALAVRAS_IGNORADAS = {
     "a", "o", "e", "de", "da", "do", "das", "dos", "um", "uma",
@@ -37,6 +38,14 @@ PALAVRAS_IGNORADAS = {
     "quais", "onde", "quando", "isso", "essa", "esse", "sobre",
     "as", "os", "ao", "aos", "na", "no", "nas", "nos",
     "bom", "boa", "dia", "tarde", "noite", "oi", "ola", "olá"
+}
+
+PALAVRAS_TECNICAS_BASE = {
+    "incêndio", "incendio", "bombeiro", "bombeiros", "it", "instrução",
+    "instrucao", "decreto", "regulamento", "medidas", "edificação",
+    "edificacao", "área de risco", "area de risco", "rotas de fuga",
+    "hidrante", "extintor", "sprinkler", "segurança contra incêndio",
+    "seguranca contra incendio", "cbpmesp", "pmesp"
 }
 
 DOMINIOS_CONFIAVEIS = [
@@ -54,9 +63,7 @@ DOMINIOS_CONFIAVEIS = [
     "lexml.gov.br",
     "ibge.gov.br",
     "bcb.gov.br",
-    "receita.fazenda.gov.br",
-    "presidencia.gov.br",
-    "gov"
+    "presidencia.gov.br"
 ]
 
 HEADERS_PADRAO = {
@@ -203,6 +210,9 @@ def normalizar_termos(texto: str):
 def normalizar_texto(texto: str) -> str:
     return re.sub(r"\s+", " ", (texto or "")).strip()
 
+def escape_html(texto: str) -> str:
+    return html.escape(texto or "")
+
 def pergunta_pede_lista(pergunta: str) -> bool:
     p = (pergunta or "").lower()
     gatilhos = [
@@ -212,14 +222,18 @@ def pergunta_pede_lista(pergunta: str) -> bool:
     ]
     return any(g in p for g in gatilhos)
 
+def pergunta_tecnica_da_base(pergunta: str) -> bool:
+    p = (pergunta or "").lower()
+    return any(t in p for t in PALAVRAS_TECNICAS_BASE)
+
 def dividir_em_chunks(texto: str, tamanho: int = TAMANHO_CHUNK, sobreposicao: int = SOBREPOSICAO_CHUNK):
     if not texto:
         return []
 
     texto = texto.strip()
     chunks = []
-
     inicio = 0
+
     while inicio < len(texto):
         fim = min(len(texto), inicio + tamanho)
         chunk = texto[inicio:fim].strip()
@@ -315,15 +329,11 @@ def score_chunk(chunk: str, arquivo: str, pergunta: str) -> int:
 def base_local_suficiente(trechos):
     if not trechos:
         return False
-
     melhor_score = max(t.get("score", 0) for t in trechos)
     return melhor_score >= SCORE_MINIMO_BASE
 
-def escape_html(texto: str) -> str:
-    return html.escape(texto or "")
-
 # =========================================================
-# RESPOSTA DIRETA SEM IA
+# RESPOSTAS DIRETAS DO SISTEMA
 # =========================================================
 def resposta_data_hora_local(pergunta: str):
     p = (pergunta or "").lower().strip()
@@ -372,7 +382,47 @@ def resposta_data_hora_local(pergunta: str):
 
     return None
 
-def montar_resposta_base_local_direta(pergunta: str, trechos: list):
+# =========================================================
+# BASE LOCAL
+# =========================================================
+@st.cache_data(show_spinner=False)
+def indexar_base_em_chunks():
+    base = carregar_base_local()
+    indice = []
+
+    for doc in base:
+        chunks = dividir_em_chunks(doc["texto"], TAMANHO_CHUNK, SOBREPOSICAO_CHUNK)
+
+        for i, chunk in enumerate(chunks, start=1):
+            indice.append({
+                "arquivo": doc["arquivo"],
+                "chunk_id": i,
+                "texto": chunk,
+                "texto_lower": chunk.lower()
+            })
+
+    return indice
+
+def buscar_trechos_na_base(pergunta: str, top_chunks: int = TOP_CHUNKS):
+    indice = indexar_base_em_chunks()
+    resultados = []
+
+    for item in indice:
+        score = score_chunk(item["texto"], item["arquivo"], pergunta)
+
+        if score > 0:
+            resultados.append({
+                "arquivo": item["arquivo"],
+                "chunk_id": item["chunk_id"],
+                "trecho": item["texto"],
+                "score": score,
+                "referencia": extrair_referencia_local(item["texto"])
+            })
+
+    resultados.sort(key=lambda x: x["score"], reverse=True)
+    return resultados[:top_chunks]
+
+def montar_resposta_base_local_direta(trechos: list, houve_apoio_web: bool = False):
     if not trechos:
         return "Não localizei base suficiente para responder com segurança."
 
@@ -384,6 +434,10 @@ def montar_resposta_base_local_direta(pergunta: str, trechos: list):
     if len(trecho) > 1800:
         trecho = trecho[:1800].strip() + "..."
 
+    observacao = "Resposta montada diretamente a partir da base local."
+    if houve_apoio_web:
+        observacao += " Houve pesquisa web complementar, mas a base local permaneceu mais forte."
+
     return (
         "RESPOSTA DIRETA:\n"
         "Localizei fundamento relevante na base local.\n\n"
@@ -394,11 +448,11 @@ def montar_resposta_base_local_direta(pergunta: str, trechos: list):
         "GRAU DE CERTEZA:\n"
         "Base local suficiente.\n\n"
         "OBSERVAÇÃO TÉCNICA:\n"
-        "Resposta montada diretamente a partir da base local, sem uso de modelo de IA."
+        f"{observacao}"
     )
 
 # =========================================================
-# BUSCA WEB
+# WEB
 # =========================================================
 def dominio_confiavel(url: str) -> bool:
     try:
@@ -420,8 +474,7 @@ def extrair_texto_url(url: str, timeout: int = 15) -> str:
         sessao = criar_sessao_http()
         resp = sessao.get(url, timeout=timeout)
         resp.raise_for_status()
-        texto = limpar_texto_html(resp.text)
-        return texto
+        return limpar_texto_html(resp.text)
     except Exception:
         return ""
 
@@ -449,6 +502,17 @@ def gerar_trecho_relevante(texto: str, pergunta: str, tamanho: int = 1300) -> st
     trecho = texto[inicio:fim]
 
     return normalizar_texto(trecho)
+
+def score_resultado_web(texto: str, pergunta: str) -> int:
+    termos = [t.lower() for t in re.findall(r"\w+", pergunta) if len(t) >= 4]
+    texto_lower = (texto or "").lower()
+    score = 0
+
+    for termo in termos:
+        if termo in texto_lower:
+            score += 1
+
+    return score
 
 def pesquisar_links_web(pergunta: str, max_links: int = TOP_LINKS_WEB):
     url = f"https://html.duckduckgo.com/html/?q={quote_plus(pergunta)}"
@@ -490,16 +554,25 @@ def buscar_na_internet(pergunta: str, max_links: int = TOP_LINKS_WEB):
             continue
 
         trecho = gerar_trecho_relevante(texto, pergunta)
+        score = score_resultado_web(trecho, pergunta)
 
         resultados.append({
             "url": url,
             "trecho": trecho,
-            "texto": texto
+            "texto": texto,
+            "score": score
         })
 
+    resultados.sort(key=lambda x: x["score"], reverse=True)
     return resultados
 
-def montar_resposta_web_direta(pergunta: str, resultados_web: list):
+def web_suficiente(resultados_web: list) -> bool:
+    if not resultados_web:
+        return False
+    melhor_score = max(r.get("score", 0) for r in resultados_web)
+    return melhor_score >= SCORE_MINIMO_WEB
+
+def montar_resposta_web_direta(resultados_web: list, houve_base_local: bool = False):
     if not resultados_web:
         return (
             "Não localizei base suficiente para responder com segurança.\n\n"
@@ -509,7 +582,7 @@ def montar_resposta_web_direta(pergunta: str, resultados_web: list):
 
     linhas = []
     linhas.append("RESPOSTA DIRETA:")
-    linhas.append("Foram localizadas fontes web confiáveis relacionadas ao tema. Seguem os trechos relevantes.\n")
+    linhas.append("Foram localizadas fontes web confiáveis relacionadas ao tema.\n")
 
     linhas.append("FUNDAMENTO:")
     for i, item in enumerate(resultados_web[:3], start=1):
@@ -520,51 +593,33 @@ def montar_resposta_web_direta(pergunta: str, resultados_web: list):
     linhas.append("Pesquisa web direta; exige conferência literal da fonte oficial.\n")
 
     linhas.append("OBSERVAÇÃO TÉCNICA:")
-    linhas.append("Resposta montada por regras, sem uso de provedor de IA.")
+    obs = "Resposta montada por regras, sem uso de provedor de IA."
+    if houve_base_local:
+        obs += " A base local foi consultada, mas a internet se mostrou mais útil para esta pergunta."
+    linhas.append(obs)
+
     return "\n".join(linhas)
 
 # =========================================================
-# INDEXAÇÃO EM CHUNKS
+# DECISÃO FINAL
 # =========================================================
-@st.cache_data(show_spinner=False)
-def indexar_base_em_chunks():
-    base = carregar_base_local()
-    indice = []
+def decidir_origem_resposta(pergunta: str, trechos_base: list, resultados_web: list):
+    base_ok = base_local_suficiente(trechos_base)
+    web_ok = web_suficiente(resultados_web)
+    pergunta_tecnica = pergunta_tecnica_da_base(pergunta)
 
-    for doc in base:
-        chunks = dividir_em_chunks(doc["texto"], TAMANHO_CHUNK, SOBREPOSICAO_CHUNK)
+    if base_ok and web_ok:
+        if pergunta_tecnica:
+            return "base_com_apoio_web"
+        return "base_com_apoio_web"
 
-        for i, chunk in enumerate(chunks, start=1):
-            indice.append({
-                "arquivo": doc["arquivo"],
-                "chunk_id": i,
-                "texto": chunk,
-                "texto_lower": chunk.lower()
-            })
+    if base_ok and not web_ok:
+        return "base_local"
 
-    return indice
+    if not base_ok and web_ok:
+        return "web_direta"
 
-# =========================================================
-# BUSCA GLOBAL NA BASE
-# =========================================================
-def buscar_trechos_na_base(pergunta: str, top_chunks: int = TOP_CHUNKS):
-    indice = indexar_base_em_chunks()
-    resultados = []
-
-    for item in indice:
-        score = score_chunk(item["texto"], item["arquivo"], pergunta)
-
-        if score > 0:
-            resultados.append({
-                "arquivo": item["arquivo"],
-                "chunk_id": item["chunk_id"],
-                "trecho": item["texto"],
-                "score": score,
-                "referencia": extrair_referencia_local(item["texto"])
-            })
-
-    resultados.sort(key=lambda x: x["score"], reverse=True)
-    return resultados[:top_chunks]
+    return "nenhuma"
 
 # =========================================================
 # GERAÇÃO DE RESPOSTA
@@ -573,7 +628,7 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
     inicio = time.time()
 
     try:
-        # 0) respostas diretas do sistema
+        # 0) Respostas diretas do sistema
         resposta_sistema = resposta_data_hora_local(pergunta)
         if resposta_sistema:
             tempo = round(time.time() - inicio, 2)
@@ -584,67 +639,50 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
                 "trechos": [],
                 "erro": "",
                 "origem": "sistema",
-                "fontes_web": []
+                "fontes_web": [],
+                "resultados_web": []
             }
 
-        # 1) base local
+        # 1) Sempre consulta base local
         trechos = buscar_trechos_na_base(pergunta, TOP_CHUNKS)
-        base_suficiente = base_local_suficiente(trechos)
 
-        if base_suficiente:
-            texto = montar_resposta_base_local_direta(pergunta, trechos)
-            tempo = round(time.time() - inicio, 2)
-
-            return {
-                "ok": True,
-                "texto": texto,
-                "tempo": tempo,
-                "trechos": trechos,
-                "erro": "",
-                "origem": "base_local",
-                "fontes_web": []
-            }
-
-        # 2) modo estrito
-        if modo_estrito:
-            tempo = round(time.time() - inicio, 2)
-            return {
-                "ok": True,
-                "texto": "Não localizei base suficiente para responder com segurança.",
-                "tempo": tempo,
-                "trechos": trechos,
-                "erro": "",
-                "origem": "nenhuma",
-                "fontes_web": []
-            }
-
-        # 3) internet direta
+        # 2) Sempre consulta internet também, se a opção estiver ligada
+        resultados_web = []
         if pesquisar_web:
             resultados_web = buscar_na_internet(pergunta, max_links=TOP_LINKS_WEB)
 
-            if resultados_web:
-                texto = montar_resposta_web_direta(pergunta, resultados_web)
-                tempo = round(time.time() - inicio, 2)
+        # 3) Decide a origem final
+        origem = decidir_origem_resposta(pergunta, trechos, resultados_web)
 
-                return {
-                    "ok": True,
-                    "texto": texto,
-                    "tempo": tempo,
-                    "trechos": trechos,
-                    "erro": "",
-                    "origem": "web_direta",
-                    "fontes_web": [r["url"] for r in resultados_web]
-                }
+        if origem == "base_local":
+            texto = montar_resposta_base_local_direta(trechos, houve_apoio_web=False)
+
+        elif origem == "base_com_apoio_web":
+            texto = montar_resposta_base_local_direta(trechos, houve_apoio_web=True)
+
+        elif origem == "web_direta":
+            texto = montar_resposta_web_direta(resultados_web, houve_base_local=bool(trechos))
+
+        else:
+            if modo_estrito:
+                texto = "Não localizei base suficiente para responder com segurança."
+            else:
+                texto = (
+                    "Não localizei base suficiente para responder com segurança.\n\n"
+                    "OBSERVAÇÃO TÉCNICA:\n"
+                    "Nem a base local nem a pesquisa web trouxeram fundamento confiável suficiente."
+                )
 
         tempo = round(time.time() - inicio, 2)
         return {
             "ok": True,
-            "texto": "Não localizei base suficiente para responder com segurança.",
+            "texto": texto,
             "tempo": tempo,
             "trechos": trechos,
             "erro": "",
-            "origem": "nenhuma",
-            "fontes_web": []
+            "origem": origem,
+            "fontes_web": [r["url"] for r in resultados_web],
+            "resultados_web": resultados_web
         }
 
     except Exception as e:
@@ -656,7 +694,8 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
             "trechos": [],
             "erro": str(e),
             "origem": "erro",
-            "fontes_web": []
+            "fontes_web": [],
+            "resultados_web": []
         }
 
 # =========================================================
@@ -683,8 +722,8 @@ with st.expander("Configuração", expanded=False):
         value=True
     )
     pesquisar_web = st.checkbox(
-        "Pesquisar na internet se a base local não trouxer resposta suficiente",
-        value=False
+        "Pesquisar automaticamente na internet além da base local",
+        value=True
     )
 
 # =========================================================
@@ -703,7 +742,7 @@ if st.button("INICIAR"):
     if not pergunta.strip():
         st.warning("Digite uma pergunta.")
     else:
-        with st.spinner("ROMANUS consultando a base..."):
+        with st.spinner("ROMANUS consultando base e internet..."):
             resultado = gerar_resposta(
                 pergunta,
                 modo_estrito=modo_estrito,
@@ -722,7 +761,7 @@ if st.button("INICIAR"):
 
             if resultado.get("fontes_web"):
                 st.markdown("### Fontes web")
-                for fonte in resultado["fontes_web"]:
+                for fonte in resultado["fontes_web"][:5]:
                     st.markdown(f"- {fonte}")
 
         if mostrar_debug:
@@ -731,21 +770,29 @@ if st.button("INICIAR"):
             arquivos_usados = [t["arquivo"] for t in resultado.get("trechos", [])]
             referencias = [t["referencia"] for t in resultado.get("trechos", []) if t.get("referencia")]
 
-            melhor_score = 0
+            melhor_score_base = 0
             if resultado.get("trechos"):
-                melhor_score = max(t.get("score", 0) for t in resultado["trechos"])
+                melhor_score_base = max(t.get("score", 0) for t in resultado["trechos"])
+
+            melhor_score_web = 0
+            if resultado.get("resultados_web"):
+                melhor_score_web = max(r.get("score", 0) for r in resultado["resultados_web"])
 
             debug_texto = (
                 f"Arquivos na base: {len(base_total)}\n"
                 f"Chunks totais indexados: {len(indice_total)}\n"
-                f"Trechos retornados para a resposta: {len(resultado.get('trechos', []))}\n"
+                f"Trechos retornados da base: {len(resultado.get('trechos', []))}\n"
+                f"Resultados web: {len(resultado.get('resultados_web', []))}\n"
                 f"Arquivos usados: {arquivos_usados if arquivos_usados else 'Nenhum'}\n"
                 f"Referências localizadas: {referencias if referencias else 'Nenhuma'}\n"
-                f"Melhor score encontrado: {melhor_score}\n"
-                f"Score mínimo para considerar a base suficiente: {SCORE_MINIMO_BASE}\n"
+                f"Melhor score da base: {melhor_score_base}\n"
+                f"Score mínimo da base: {SCORE_MINIMO_BASE}\n"
+                f"Melhor score web: {melhor_score_web}\n"
+                f"Score mínimo web: {SCORE_MINIMO_WEB}\n"
                 f"Tempo de resposta: {resultado.get('tempo', 0)} s\n"
                 f"Modo estrito: {'Ligado' if modo_estrito else 'Desligado'}\n"
-                f"Pesquisa web: {'Ligada' if pesquisar_web else 'Desligada'}\n"
+                f"Pesquisa web automática: {'Ligada' if pesquisar_web else 'Desligada'}\n"
+                f"Pergunta técnica da base: {'Sim' if pergunta_tecnica_da_base(pergunta) else 'Não'}\n"
                 f"Origem final da resposta: {resultado.get('origem', 'desconhecida')}"
             )
 
