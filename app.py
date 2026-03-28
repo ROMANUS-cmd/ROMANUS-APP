@@ -2,10 +2,12 @@ import os
 import re
 import time
 import html
+import unicodedata
+from datetime import datetime
+from urllib.parse import quote_plus, urlparse
+
 import requests
 import streamlit as st
-from datetime import datetime
-from urllib.parse import urlparse, quote_plus
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
 
@@ -26,9 +28,11 @@ ARQUIVOS_SUPORTADOS = (".txt", ".pdf")
 
 TAMANHO_CHUNK = 1800
 SOBREPOSICAO_CHUNK = 250
-TOP_CHUNKS = 12
+TOP_DOCS = 6
+TOP_CHUNKS = 10
 TOP_LINKS_WEB = 5
 MIN_TEXTO_WEB = 500
+
 SCORE_MINIMO_BASE = 35
 SCORE_MINIMO_WEB = 2
 
@@ -45,7 +49,8 @@ PALAVRAS_TECNICAS_BASE = {
     "instrucao", "decreto", "regulamento", "medidas", "edificação",
     "edificacao", "área de risco", "area de risco", "rotas de fuga",
     "hidrante", "extintor", "sprinkler", "segurança contra incêndio",
-    "seguranca contra incendio", "cbpmesp", "pmesp"
+    "seguranca contra incendio", "cbpmesp", "pmesp", "chuveiros",
+    "hidrantes", "fumaca", "fumaça", "saida de emergencia", "saídas"
 }
 
 DOMINIOS_CONFIAVEIS = [
@@ -63,7 +68,11 @@ DOMINIOS_CONFIAVEIS = [
     "lexml.gov.br",
     "ibge.gov.br",
     "bcb.gov.br",
-    "presidencia.gov.br"
+    "presidencia.gov.br",
+    "www.gov.br",
+    "pt.wikipedia.org",
+    "brasilescola.uol.com.br",
+    "mundoeducacao.uol.com.br"
 ]
 
 HEADERS_PADRAO = {
@@ -135,6 +144,71 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================
+# UTILITÁRIOS
+# =========================================================
+def escape_html(texto: str) -> str:
+    return html.escape(texto or "")
+
+def remover_acentos(texto: str) -> str:
+    return "".join(
+        c for c in unicodedata.normalize("NFD", texto or "")
+        if unicodedata.category(c) != "Mn"
+    )
+
+def normalizar_texto(texto: str) -> str:
+    return re.sub(r"\s+", " ", (texto or "")).strip()
+
+def texto_norm(texto: str) -> str:
+    texto = remover_acentos((texto or "").lower())
+    texto = re.sub(r"[^a-z0-9/\-º°\s]", " ", texto)
+    texto = re.sub(r"\s+", " ", texto).strip()
+    return texto
+
+def normalizar_termos(texto: str):
+    return [
+        t for t in re.findall(r"\w+", texto_norm(texto))
+        if len(t) >= 2 and t not in PALAVRAS_IGNORADAS
+    ]
+
+def pergunta_pede_lista(pergunta: str) -> bool:
+    p = texto_norm(pergunta)
+    gatilhos = [
+        "quais", "lista", "rol", "enumere", "enumeracao",
+        "medidas", "requisitos", "itens", "criterios",
+        "quais sao", "quais as", "defina", "definicao"
+    ]
+    return any(g in p for g in gatilhos)
+
+def pergunta_tecnica_da_base(pergunta: str) -> bool:
+    p = texto_norm(pergunta)
+    return any(remover_acentos(t) in p for t in PALAVRAS_TECNICAS_BASE)
+
+def pergunta_pede_objeto_norma(pergunta: str) -> bool:
+    p = texto_norm(pergunta)
+    gatilhos = [
+        "o que regulamenta",
+        "o que trata",
+        "qual o objeto",
+        "qual o objetivo",
+        "do que trata",
+        "o que dispoe",
+        "o que estabelece",
+        "a que se refere"
+    ]
+    return any(g in p for g in gatilhos)
+
+def pergunta_pede_definicao_identidade(pergunta: str) -> bool:
+    p = texto_norm(pergunta)
+    gatilhos = [
+        "qual e o seu nome",
+        "qual o seu nome",
+        "como e o seu nome",
+        "quem e voce",
+        "como voce se chama"
+    ]
+    return any(g in p for g in gatilhos)
+
+# =========================================================
 # SESSÃO HTTP
 # =========================================================
 @st.cache_resource
@@ -183,49 +257,169 @@ def carregar_base_local():
             caminho = os.path.join(raiz, arquivo)
             nome_relativo = os.path.relpath(caminho, BASE_CONHECIMENTO_DIR)
 
-            texto = ""
             if arquivo.lower().endswith(".txt"):
                 texto = extrair_texto_txt(caminho)
-            elif arquivo.lower().endswith(".pdf"):
+            else:
                 texto = extrair_texto_pdf(caminho)
 
             if texto:
                 base.append({
                     "arquivo": nome_relativo,
+                    "arquivo_norm": texto_norm(nome_relativo),
                     "texto": texto,
-                    "texto_lower": texto.lower()
+                    "texto_norm": texto_norm(texto)
                 })
 
     return base
 
 # =========================================================
-# FUNÇÕES DE APOIO
+# DETECTOR DE REFERÊNCIA EXATA
 # =========================================================
-def normalizar_termos(texto: str):
+def detectar_referencia(pergunta: str):
+    p = texto_norm(pergunta)
+
+    it_match = re.search(r"\bit\s*(?:n|nº|n°|no|numero)?\s*(\d{1,2})[/-](\d{2})\b", p)
+    decreto_match = re.search(r"\bdecreto\s*(?:n|nº|n°|no|numero)?\s*(\d{1,3}(?:\.\d{3})*)[/-](\d{2})\b", p)
+    artigo_match = re.search(r"\bart(?:igo)?\.?\s*(\d+[a-z]?)\b", p)
+    item_match = re.search(r"\bitem\s+(\d+(?:\.\d+)*)\b", p)
+
+    ref = {
+        "tipo": None,
+        "it_num": None,
+        "it_ano": None,
+        "decreto_num": None,
+        "decreto_ano": None,
+        "artigo": None,
+        "item": None
+    }
+
+    if it_match:
+        ref["tipo"] = "it"
+        ref["it_num"] = it_match.group(1)
+        ref["it_ano"] = it_match.group(2)
+
+    if decreto_match:
+        ref["tipo"] = "decreto"
+        ref["decreto_num"] = decreto_match.group(1)
+        ref["decreto_ano"] = decreto_match.group(2)
+
+    if artigo_match:
+        ref["artigo"] = artigo_match.group(1)
+
+    if item_match:
+        ref["item"] = item_match.group(1)
+
+    return ref
+
+def variantes_it(it_num: str, it_ano: str):
+    n = str(int(it_num))
+    n2 = f"{int(it_num):02d}"
     return [
-        t for t in re.findall(r"\w+", (texto or "").lower())
-        if len(t) >= 2 and t not in PALAVRAS_IGNORADAS
+        f"it {n}/{it_ano}",
+        f"it {n}-{it_ano}",
+        f"it nº {n}-{it_ano}",
+        f"it n {n}-{it_ano}",
+        f"it no {n}-{it_ano}",
+        f"it {n2}/{it_ano}",
+        f"it {n2}-{it_ano}",
+        f"it nº {n2}-{it_ano}",
+        f"it n {n2}-{it_ano}",
+        f"it no {n2}-{it_ano}"
     ]
 
-def normalizar_texto(texto: str) -> str:
-    return re.sub(r"\s+", " ", (texto or "")).strip()
-
-def escape_html(texto: str) -> str:
-    return html.escape(texto or "")
-
-def pergunta_pede_lista(pergunta: str) -> bool:
-    p = (pergunta or "").lower()
-    gatilhos = [
-        "quais", "lista", "rol", "enumere", "enumeração",
-        "medidas", "requisitos", "itens", "critérios",
-        "quais são", "quais as", "defina", "definição"
+def variantes_decreto(num: str, ano: str):
+    num = num.replace(",", ".")
+    return [
+        f"decreto {num}/{ano}",
+        f"decreto {num}-{ano}",
+        f"decreto nº {num}/{ano}",
+        f"decreto nº {num}-{ano}",
+        f"decreto n {num}/{ano}",
+        f"decreto n {num}-{ano}"
     ]
-    return any(g in p for g in gatilhos)
 
-def pergunta_tecnica_da_base(pergunta: str) -> bool:
-    p = (pergunta or "").lower()
-    return any(t in p for t in PALAVRAS_TECNICAS_BASE)
+# =========================================================
+# SCORE DE DOCUMENTO
+# =========================================================
+def score_nome_arquivo(nome: str, pergunta: str) -> int:
+    score = 0
+    nome_lower = texto_norm(nome)
+    pergunta_lower = texto_norm(pergunta)
 
+    palavras_fortes = [
+        "decreto", "lei", "regulamento", "instrucao", "it",
+        "norma", "anexo", "quadro", "tabela", "medidas",
+        "seguranca", "incendio", "capitulo", "artigo"
+    ]
+
+    for palavra in palavras_fortes:
+        if palavra in nome_lower and palavra in pergunta_lower:
+            score += 10
+
+    if pergunta_pede_lista(pergunta):
+        for palavra in ["anexo", "quadro", "tabela", "medidas", "regulamento", "decreto"]:
+            if palavra in nome_lower:
+                score += 8
+
+    return score
+
+def score_documento(doc, pergunta: str, ref: dict) -> int:
+    score = 0
+    arquivo_norm = doc["arquivo_norm"]
+    pergunta_norm = texto_norm(pergunta)
+    termos = normalizar_termos(pergunta)
+
+    # Match exato de IT
+    if ref["tipo"] == "it" and ref["it_num"] and ref["it_ano"]:
+        for v in variantes_it(ref["it_num"], ref["it_ano"]):
+            if v in arquivo_norm:
+                score += 500
+
+        # bônus menor se nome trouxer o número da IT em formato solto
+        n = str(int(ref["it_num"]))
+        n2 = f"{int(ref['it_num']):02d}"
+        if f"it {n}" in arquivo_norm or f"it {n2}" in arquivo_norm:
+            score += 80
+        if ref["it_ano"] in arquivo_norm:
+            score += 40
+
+    # Match exato de Decreto
+    if ref["tipo"] == "decreto" and ref["decreto_num"] and ref["decreto_ano"]:
+        for v in variantes_decreto(ref["decreto_num"], ref["decreto_ano"]):
+            if v in arquivo_norm:
+                score += 500
+
+        if ref["decreto_num"] in arquivo_norm:
+            score += 80
+        if ref["decreto_ano"] in arquivo_norm:
+            score += 40
+
+    # termos normais
+    for termo in termos:
+        if termo in arquivo_norm:
+            score += 6
+
+    score += score_nome_arquivo(doc["arquivo"], pergunta)
+
+    # se pergunta técnica e arquivo for it/decreto, ajuda
+    if pergunta_tecnica_da_base(pergunta):
+        if "it " in arquivo_norm or "decreto" in arquivo_norm:
+            score += 10
+
+    # se pergunta não é técnica, reduz peso de docs técnicos
+    if not pergunta_tecnica_da_base(pergunta):
+        if "it " in arquivo_norm or "decreto" in arquivo_norm:
+            score -= 20
+
+    # se pergunta pede objeto da norma, favorece o arquivo exato detectado
+    if pergunta_pede_objeto_norma(pergunta) and ref["tipo"] in {"it", "decreto"}:
+        score += 20
+
+    return score
+
+# =========================================================
+# CHUNKS
+# =========================================================
 def dividir_em_chunks(texto: str, tamanho: int = TAMANHO_CHUNK, sobreposicao: int = SOBREPOSICAO_CHUNK):
     if not texto:
         return []
@@ -251,15 +445,15 @@ def extrair_referencia_local(texto: str):
     referencia = ""
 
     padroes = [
-        r"(art\.?\s*\d+[º°]?)",
-        r"(artigo\s+\d+[º°]?)",
+        r"(art\.?\s*\d+[a-zº°]?)",
+        r"(artigo\s+\d+[a-zº°]?)",
         r"(item\s+\d+(\.\d+)*)",
         r"(capítulo\s+[ivxlcdm]+)",
         r"(capitulo\s+[ivxlcdm]+)",
         r"(§\s*\d+[º°]?)"
     ]
 
-    texto_lower = (texto or "").lower()
+    texto_lower = texto_norm(texto)
 
     for padrao in padroes:
         m = re.search(padrao, texto_lower, re.IGNORECASE)
@@ -269,36 +463,39 @@ def extrair_referencia_local(texto: str):
 
     return referencia
 
-def score_nome_arquivo(nome: str, pergunta: str) -> int:
-    score = 0
-    nome_lower = nome.lower()
-    pergunta_lower = pergunta.lower()
+def chunk_parece_lixo(chunk: str) -> bool:
+    t = normalizar_texto(chunk)
+    if not t:
+        return True
 
-    palavras_fortes = [
-        "decreto", "lei", "regulamento", "instrução", "it",
-        "norma", "anexo", "quadro", "tabela", "medidas",
-        "segurança", "incêndio", "capítulo", "artigo"
-    ]
+    # excesso de números
+    digitos = sum(c.isdigit() for c in t)
+    letras = sum(c.isalpha() for c in t)
+    if digitos > letras and digitos > 40:
+        return True
 
-    for palavra in palavras_fortes:
-        if palavra in nome_lower and palavra in pergunta_lower:
-            score += 18
+    # poucas palavras reais
+    palavras = re.findall(r"[A-Za-zÀ-ÿ]{2,}", t)
+    if len(palavras) < 12:
+        return True
 
-    if pergunta_pede_lista(pergunta):
-        for palavra in ["anexo", "quadro", "tabela", "medidas", "regulamento", "decreto"]:
-            if palavra in nome_lower:
-                score += 16
+    # muito padrão de tabela quebrada
+    if re.search(r"(\d+[,\.\d]*\s+){8,}", t):
+        return True
 
-    return score
+    return False
 
-def score_chunk(chunk: str, arquivo: str, pergunta: str) -> int:
-    chunk_lower = chunk.lower()
-    pergunta_lower = (pergunta or "").lower()
+def score_chunk(chunk: str, arquivo: str, pergunta: str, ref: dict) -> int:
+    chunk_norm = texto_norm(chunk)
+    pergunta_norm = texto_norm(pergunta)
     termos = normalizar_termos(pergunta)
     score = 0
 
+    if chunk_parece_lixo(chunk):
+        return -100
+
     for termo in termos:
-        ocorrencias = chunk_lower.count(termo)
+        ocorrencias = chunk_norm.count(termo)
         if ocorrencias > 0:
             score += ocorrencias * 6
 
@@ -306,66 +503,185 @@ def score_chunk(chunk: str, arquivo: str, pergunta: str) -> int:
 
     if pergunta_pede_lista(pergunta):
         gatilhos_lista = [
-            "constituem", "incluem", "compreendem", "são medidas",
-            "deverá ser levado em consideração",
+            "constituem", "incluem", "compreendem", "sao medidas",
+            "devera ser levado em consideracao",
             "i -", "ii -", "iii -", "iv -", "v -", "vi -"
         ]
         for g in gatilhos_lista:
-            if g in chunk_lower:
-                score += 12
+            if g in chunk_norm:
+                score += 10
 
-    if "decreto" in pergunta_lower and "decreto" in arquivo.lower():
-        score += 20
+    if pergunta_pede_objeto_norma(pergunta):
+        gatilhos_objeto = [
+            "esta instrucao tecnica",
+            "fixa as condicoes",
+            "estabelece as exigencias",
+            "define as medidas",
+            "disciplina",
+            "regulamenta",
+            "aplica se",
+            "tem por objetivo",
+            "objetivo",
+            "finalidade"
+        ]
+        for g in gatilhos_objeto:
+            if g in chunk_norm:
+                score += 18
 
-    if ("artigo 20" in pergunta_lower or "art. 20" in pergunta_lower) and ("artigo 20" in chunk_lower or "art. 20" in chunk_lower):
-        score += 20
+    if ref["artigo"]:
+        alvo = f"art {ref['artigo']}"
+        if alvo in chunk_norm or f"artigo {ref['artigo']}" in chunk_norm:
+            score += 30
 
-    if ("capítulo viii" in pergunta_lower or "capitulo viii" in pergunta_lower) and ("capítulo viii" in chunk_lower or "capitulo viii" in chunk_lower):
-        score += 12
+    if ref["item"]:
+        if f"item {ref['item']}" in chunk_norm:
+            score += 30
 
-    if "medidas de segurança contra incêndio" in pergunta_lower and "medidas de segurança contra incêndio" in chunk_lower:
-        score += 20
+    # início do documento costuma conter objeto/finalidade
+    if pergunta_pede_objeto_norma(pergunta):
+        score += 5
+
+    # Se pergunta não é técnica, punir chunks técnicos
+    if not pergunta_tecnica_da_base(pergunta):
+        if any(t in chunk_norm for t in ["incendio", "seguranca contra incendio", "hidrantes", "chuveiros"]):
+            score -= 25
 
     return score
 
-def base_local_suficiente(trechos, pergunta: str):
+# =========================================================
+# INDEXAÇÃO
+# =========================================================
+@st.cache_data(show_spinner=False)
+def indexar_base_em_chunks():
+    base = carregar_base_local()
+    indice = []
+
+    for doc in base:
+        chunks = dividir_em_chunks(doc["texto"], TAMANHO_CHUNK, SOBREPOSICAO_CHUNK)
+        for i, chunk in enumerate(chunks, start=1):
+            indice.append({
+                "arquivo": doc["arquivo"],
+                "arquivo_norm": doc["arquivo_norm"],
+                "chunk_id": i,
+                "texto": chunk,
+                "texto_norm": texto_norm(chunk)
+            })
+
+    return indice
+
+# =========================================================
+# BUSCA NA BASE
+# =========================================================
+def buscar_documentos_candidatos(pergunta: str, top_docs: int = TOP_DOCS):
+    base = carregar_base_local()
+    ref = detectar_referencia(pergunta)
+    docs = []
+
+    for doc in base:
+        score = score_documento(doc, pergunta, ref)
+        if score > 0:
+            docs.append({
+                "arquivo": doc["arquivo"],
+                "arquivo_norm": doc["arquivo_norm"],
+                "score": score
+            })
+
+    docs.sort(key=lambda x: x["score"], reverse=True)
+    return docs[:top_docs], ref
+
+def buscar_trechos_na_base(pergunta: str, top_chunks: int = TOP_CHUNKS):
+    docs_candidatos, ref = buscar_documentos_candidatos(pergunta, TOP_DOCS)
+    if not docs_candidatos:
+        return [], docs_candidatos, ref
+
+    arquivos_prioritarios = {d["arquivo"] for d in docs_candidatos}
+    indice = indexar_base_em_chunks()
+    resultados = []
+
+    for item in indice:
+        if item["arquivo"] not in arquivos_prioritarios:
+            continue
+
+        score = score_chunk(item["texto"], item["arquivo"], pergunta, ref)
+        if score <= 0:
+            continue
+
+        resultados.append({
+            "arquivo": item["arquivo"],
+            "chunk_id": item["chunk_id"],
+            "trecho": item["texto"],
+            "score": score,
+            "referencia": extrair_referencia_local(item["texto"])
+        })
+
+    resultados.sort(key=lambda x: x["score"], reverse=True)
+    return resultados[:top_chunks], docs_candidatos, ref
+
+def base_local_suficiente(trechos, pergunta: str, ref: dict):
     if not trechos:
         return False
 
     termos = normalizar_termos(pergunta)
-    if not termos:
+    if not termos and not ref["tipo"]:
         return False
 
     melhor = trechos[0]
-    texto = (melhor.get("trecho") or "").lower()
+    texto = texto_norm(melhor.get("trecho") or "")
     termos_presentes = sum(1 for t in termos if t in texto)
+    melhor_score = melhor.get("score", 0)
+
+    if ref["tipo"] in {"it", "decreto"}:
+        # se há norma exata perguntada, basta o arquivo certo + chunk razoável
+        if melhor_score >= 40:
+            return True
 
     if len(termos) == 1:
         minimo_termos = 1
-    elif len(termos) == 2:
-        minimo_termos = 2
     else:
         minimo_termos = 2
 
-    melhor_score = melhor.get("score", 0)
-
     return melhor_score >= SCORE_MINIMO_BASE and termos_presentes >= minimo_termos
+
+def montar_resposta_base_local_direta(pergunta: str, trechos: list, docs_candidatos: list, houve_apoio_web: bool = False):
+    if not trechos:
+        return "Não localizei base suficiente para responder com segurança."
+
+    melhor = trechos[0]
+    arquivo = melhor.get("arquivo", "arquivo não identificado")
+    referencia = melhor.get("referencia") or "não localizada"
+    trecho = normalizar_texto(melhor.get("trecho", ""))
+
+    if len(trecho) > 1600:
+        trecho = trecho[:1600].strip() + "..."
+
+    observacao = "Resposta montada diretamente a partir da base local."
+    if houve_apoio_web:
+        observacao += " Houve pesquisa web complementar, mas a base local permaneceu mais forte."
+
+    # Se perguntou o objeto da IT/decreto, deixar isso explícito
+    if pergunta_pede_objeto_norma(pergunta):
+        cabecalho = "Localizei na base local o fundamento mais provável sobre o objeto/finalidade da norma."
+    else:
+        cabecalho = "Localizei fundamento relevante na base local."
+
+    return (
+        "RESPOSTA DIRETA:\n"
+        f"{cabecalho}\n\n"
+        "FUNDAMENTO:\n"
+        f"Arquivo: {arquivo}\n"
+        f"Referência: {referencia}\n"
+        f"Trecho: {trecho}\n\n"
+        "GRAU DE CERTEZA:\n"
+        "Base local suficiente.\n\n"
+        "OBSERVAÇÃO TÉCNICA:\n"
+        f"{observacao}"
+    )
 
 # =========================================================
 # RESPOSTAS DIRETAS DO SISTEMA
 # =========================================================
 def resposta_identidade(pergunta: str):
-    p = (pergunta or "").lower().strip()
-
-    gatilhos_nome = [
-        "qual é o seu nome",
-        "qual o seu nome",
-        "como é o seu nome",
-        "quem é você",
-        "como você se chama"
-    ]
-
-    if any(g in p for g in gatilhos_nome):
+    if pergunta_pede_definicao_identidade(pergunta):
         return (
             "RESPOSTA DIRETA:\n"
             "Meu nome é ROMANUS.\n\n"
@@ -374,24 +690,23 @@ def resposta_identidade(pergunta: str):
             "GRAU DE CERTEZA:\n"
             "Direto do sistema."
         )
-
     return None
 
 def resposta_data_hora_local(pergunta: str):
-    p = (pergunta or "").lower().strip()
+    p = texto_norm(pergunta)
 
     gatilhos_dia = [
-        "que dia é hoje",
+        "que dia e hoje",
         "qual o dia de hoje",
-        "qual é o dia de hoje",
+        "qual e o dia de hoje",
         "data de hoje",
-        "hoje é que dia"
+        "hoje e que dia"
     ]
 
     gatilhos_hora = [
-        "que horas são",
+        "que horas sao",
         "qual a hora",
-        "qual é a hora"
+        "qual e a hora"
     ]
 
     agora = datetime.now()
@@ -425,81 +740,12 @@ def resposta_data_hora_local(pergunta: str):
     return None
 
 # =========================================================
-# BASE LOCAL
-# =========================================================
-@st.cache_data(show_spinner=False)
-def indexar_base_em_chunks():
-    base = carregar_base_local()
-    indice = []
-
-    for doc in base:
-        chunks = dividir_em_chunks(doc["texto"], TAMANHO_CHUNK, SOBREPOSICAO_CHUNK)
-
-        for i, chunk in enumerate(chunks, start=1):
-            indice.append({
-                "arquivo": doc["arquivo"],
-                "chunk_id": i,
-                "texto": chunk,
-                "texto_lower": chunk.lower()
-            })
-
-    return indice
-
-def buscar_trechos_na_base(pergunta: str, top_chunks: int = TOP_CHUNKS):
-    indice = indexar_base_em_chunks()
-    resultados = []
-
-    for item in indice:
-        score = score_chunk(item["texto"], item["arquivo"], pergunta)
-
-        if score > 0:
-            resultados.append({
-                "arquivo": item["arquivo"],
-                "chunk_id": item["chunk_id"],
-                "trecho": item["texto"],
-                "score": score,
-                "referencia": extrair_referencia_local(item["texto"])
-            })
-
-    resultados.sort(key=lambda x: x["score"], reverse=True)
-    return resultados[:top_chunks]
-
-def montar_resposta_base_local_direta(trechos: list, houve_apoio_web: bool = False):
-    if not trechos:
-        return "Não localizei base suficiente para responder com segurança."
-
-    melhor = trechos[0]
-    arquivo = melhor.get("arquivo", "arquivo não identificado")
-    referencia = melhor.get("referencia") or "não localizada"
-    trecho = normalizar_texto(melhor.get("trecho", ""))
-
-    if len(trecho) > 1800:
-        trecho = trecho[:1800].strip() + "..."
-
-    observacao = "Resposta montada diretamente a partir da base local."
-    if houve_apoio_web:
-        observacao += " Houve pesquisa web complementar, mas a base local permaneceu mais forte."
-
-    return (
-        "RESPOSTA DIRETA:\n"
-        "Localizei fundamento relevante na base local.\n\n"
-        "FUNDAMENTO:\n"
-        f"Arquivo: {arquivo}\n"
-        f"Referência: {referencia}\n"
-        f"Trecho: {trecho}\n\n"
-        "GRAU DE CERTEZA:\n"
-        "Base local suficiente.\n\n"
-        "OBSERVAÇÃO TÉCNICA:\n"
-        f"{observacao}"
-    )
-
-# =========================================================
 # WEB
 # =========================================================
 def dominio_confiavel(url: str) -> bool:
     try:
         host = urlparse(url).netloc.lower().replace("www.", "")
-        return any(host == d or host.endswith("." + d) for d in DOMINIOS_CONFIAVEIS)
+        return any(host == d.replace("www.", "") or host.endswith("." + d.replace("www.", "")) for d in DOMINIOS_CONFIAVEIS)
     except Exception:
         return False
 
@@ -524,8 +770,8 @@ def gerar_trecho_relevante(texto: str, pergunta: str, tamanho: int = 1300) -> st
     if not texto:
         return ""
 
-    termos = [t.lower() for t in re.findall(r"\w+", pergunta) if len(t) >= 4]
-    texto_lower = texto.lower()
+    termos = [t.lower() for t in re.findall(r"\w+", texto_norm(pergunta)) if len(t) >= 4]
+    texto_lower = texto_norm(texto)
 
     melhor_pos = 0
     melhor_score = -1
@@ -546,13 +792,17 @@ def gerar_trecho_relevante(texto: str, pergunta: str, tamanho: int = 1300) -> st
     return normalizar_texto(trecho)
 
 def score_resultado_web(texto: str, pergunta: str) -> int:
-    termos = [t.lower() for t in re.findall(r"\w+", pergunta) if len(t) >= 4]
-    texto_lower = (texto or "").lower()
+    termos = [t.lower() for t in re.findall(r"\w+", texto_norm(pergunta)) if len(t) >= 4]
+    texto_lower = texto_norm(texto)
     score = 0
 
     for termo in termos:
         if termo in texto_lower:
             score += 1
+
+    # bonus para perguntas gerais
+    if not pergunta_tecnica_da_base(pergunta):
+        score += 1
 
     return score
 
@@ -645,13 +895,13 @@ def montar_resposta_web_direta(resultados_web: list, houve_base_local: bool = Fa
 # =========================================================
 # DECISÃO FINAL
 # =========================================================
-def decidir_origem_resposta(pergunta: str, trechos_base: list, resultados_web: list):
-    base_ok = base_local_suficiente(trechos_base, pergunta)
+def decidir_origem_resposta(pergunta: str, trechos_base: list, resultados_web: list, ref: dict):
+    base_ok = base_local_suficiente(trechos_base, pergunta, ref)
     web_ok = web_suficiente(resultados_web)
-    pergunta_tecnica = pergunta_tecnica_da_base(pergunta)
+    tecnica = pergunta_tecnica_da_base(pergunta)
 
     if base_ok and web_ok:
-        if pergunta_tecnica:
+        if tecnica or ref["tipo"] in {"it", "decreto"}:
             return "base_com_apoio_web"
         return "web_direta"
 
@@ -666,7 +916,7 @@ def decidir_origem_resposta(pergunta: str, trechos_base: list, resultados_web: l
 # =========================================================
 # GERAÇÃO DE RESPOSTA
 # =========================================================
-def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool = False):
+def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool = True):
     inicio = time.time()
 
     try:
@@ -681,7 +931,9 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
                 "erro": "",
                 "origem": "sistema",
                 "fontes_web": [],
-                "resultados_web": []
+                "resultados_web": [],
+                "docs_candidatos": [],
+                "ref_detectada": {}
             }
 
         resposta_sistema = resposta_data_hora_local(pergunta)
@@ -695,22 +947,24 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
                 "erro": "",
                 "origem": "sistema",
                 "fontes_web": [],
-                "resultados_web": []
+                "resultados_web": [],
+                "docs_candidatos": [],
+                "ref_detectada": {}
             }
 
-        trechos = buscar_trechos_na_base(pergunta, TOP_CHUNKS)
+        trechos, docs_candidatos, ref = buscar_trechos_na_base(pergunta, TOP_CHUNKS)
 
         resultados_web = []
         if pesquisar_web:
             resultados_web = buscar_na_internet(pergunta, max_links=TOP_LINKS_WEB)
 
-        origem = decidir_origem_resposta(pergunta, trechos, resultados_web)
+        origem = decidir_origem_resposta(pergunta, trechos, resultados_web, ref)
 
         if origem == "base_local":
-            texto = montar_resposta_base_local_direta(trechos, houve_apoio_web=False)
+            texto = montar_resposta_base_local_direta(pergunta, trechos, docs_candidatos, houve_apoio_web=False)
 
         elif origem == "base_com_apoio_web":
-            texto = montar_resposta_base_local_direta(trechos, houve_apoio_web=True)
+            texto = montar_resposta_base_local_direta(pergunta, trechos, docs_candidatos, houve_apoio_web=True)
 
         elif origem == "web_direta":
             texto = montar_resposta_web_direta(resultados_web, houve_base_local=bool(trechos))
@@ -734,7 +988,9 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
             "erro": "",
             "origem": origem,
             "fontes_web": [r["url"] for r in resultados_web],
-            "resultados_web": resultados_web
+            "resultados_web": resultados_web,
+            "docs_candidatos": docs_candidatos,
+            "ref_detectada": ref
         }
 
     except Exception as e:
@@ -747,7 +1003,9 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
             "erro": str(e),
             "origem": "erro",
             "fontes_web": [],
-            "resultados_web": []
+            "resultados_web": [],
+            "docs_candidatos": [],
+            "ref_detectada": {}
         }
 
 # =========================================================
@@ -767,7 +1025,7 @@ st.markdown("""
 with st.expander("Configuração", expanded=False):
     modo_estrito = st.checkbox(
         "Modo estrito (responder só com base local, sem improvisar)",
-        value=True
+        value=False
     )
     mostrar_debug = st.checkbox(
         "Mostrar diagnóstico técnico",
@@ -830,13 +1088,18 @@ if st.button("INICIAR"):
             if resultado.get("resultados_web"):
                 melhor_score_web = max(r.get("score", 0) for r in resultado["resultados_web"])
 
+            docs_candidatos = [d["arquivo"] for d in resultado.get("docs_candidatos", [])]
+            ref = resultado.get("ref_detectada", {})
+
             debug_texto = (
                 f"Arquivos na base: {len(base_total)}\n"
                 f"Chunks totais indexados: {len(indice_total)}\n"
+                f"Documentos candidatos: {docs_candidatos if docs_candidatos else 'Nenhum'}\n"
                 f"Trechos retornados da base: {len(resultado.get('trechos', []))}\n"
                 f"Resultados web: {len(resultado.get('resultados_web', []))}\n"
                 f"Arquivos usados: {arquivos_usados if arquivos_usados else 'Nenhum'}\n"
                 f"Referências localizadas: {referencias if referencias else 'Nenhuma'}\n"
+                f"Referência detectada: {ref if ref else 'Nenhuma'}\n"
                 f"Melhor score da base: {melhor_score_base}\n"
                 f"Score mínimo da base: {SCORE_MINIMO_BASE}\n"
                 f"Melhor score web: {melhor_score_web}\n"
@@ -845,6 +1108,7 @@ if st.button("INICIAR"):
                 f"Modo estrito: {'Ligado' if modo_estrito else 'Desligado'}\n"
                 f"Pesquisa web automática: {'Ligada' if pesquisar_web else 'Desligada'}\n"
                 f"Pergunta técnica da base: {'Sim' if pergunta_tecnica_da_base(pergunta) else 'Não'}\n"
+                f"Pergunta pede objeto da norma: {'Sim' if pergunta_pede_objeto_norma(pergunta) else 'Não'}\n"
                 f"Origem final da resposta: {resultado.get('origem', 'desconhecida')}"
             )
 
