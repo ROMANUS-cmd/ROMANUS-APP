@@ -1,9 +1,20 @@
 import os
 import re
 import time
+import html
+import requests
 import streamlit as st
+from urllib.parse import urlparse, quote_plus
+from bs4 import BeautifulSoup
 from google import genai
 from pypdf import PdfReader
+
+# Playwright é opcional
+try:
+    from playwright.sync_api import sync_playwright
+    PLAYWRIGHT_DISPONIVEL = True
+except Exception:
+    PLAYWRIGHT_DISPONIVEL = False
 
 # =========================================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -24,6 +35,8 @@ MODELO_GEMINI = "gemini-2.5-flash"
 TAMANHO_CHUNK = 1800
 SOBREPOSICAO_CHUNK = 250
 TOP_CHUNKS = 12
+TOP_LINKS_WEB = 5
+MIN_TEXTO_WEB = 500
 
 PALAVRAS_IGNORADAS = {
     "a", "o", "e", "de", "da", "do", "das", "dos", "um", "uma",
@@ -31,6 +44,29 @@ PALAVRAS_IGNORADAS = {
     "quais", "onde", "quando", "isso", "essa", "esse", "sobre",
     "as", "os", "ao", "aos", "na", "no", "nas", "nos",
     "bom", "boa", "dia", "tarde", "noite", "oi", "ola", "olá"
+}
+
+DOMINIOS_CONFIAVEIS = [
+    "gov.br",
+    "planalto.gov.br",
+    "in.gov.br",
+    "camara.leg.br",
+    "senado.leg.br",
+    "stf.jus.br",
+    "cnj.jus.br",
+    "sp.gov.br",
+    "alesp.sp.gov.br",
+    "bombeiros.sp.gov.br",
+    "policiamilitar.sp.gov.br",
+    "lexml.gov.br"
+]
+
+HEADERS_PADRAO = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/136.0 Safari/537.36"
+    )
 }
 
 # =========================================================
@@ -244,6 +280,12 @@ def criar_cliente():
         raise ValueError("A chave GEMINI_API_KEY não foi encontrada no secrets.")
     return genai.Client(api_key=api_key)
 
+@st.cache_resource
+def criar_sessao_http():
+    sessao = requests.Session()
+    sessao.headers.update(HEADERS_PADRAO)
+    return sessao
+
 # =========================================================
 # LEITURA DOS ARQUIVOS
 # =========================================================
@@ -307,6 +349,9 @@ def normalizar_termos(texto: str):
         t for t in re.findall(r"\w+", (texto or "").lower())
         if len(t) >= 2 and t not in PALAVRAS_IGNORADAS
     ]
+
+def normalizar_texto(texto: str) -> str:
+    return re.sub(r"\s+", " ", (texto or "")).strip()
 
 def pergunta_pede_lista(pergunta: str) -> bool:
     p = (pergunta or "").lower()
@@ -418,6 +463,155 @@ def score_chunk(chunk: str, arquivo: str, pergunta: str) -> int:
     return score
 
 # =========================================================
+# BUSCA WEB
+# =========================================================
+def dominio_confiavel(url: str) -> bool:
+    try:
+        host = urlparse(url).netloc.lower().replace("www.", "")
+        return any(host == d or host.endswith("." + d) for d in DOMINIOS_CONFIAVEIS)
+    except Exception:
+        return False
+
+def limpar_texto_html(html_texto: str) -> str:
+    soup = BeautifulSoup(html_texto, "html.parser")
+
+    for tag in soup(["script", "style", "noscript", "header", "footer", "nav", "aside"]):
+        tag.decompose()
+
+    return normalizar_texto(soup.get_text(separator=" ", strip=True))
+
+def extrair_texto_url_requests(url: str, timeout: int = 15) -> str:
+    sessao = criar_sessao_http()
+    resp = sessao.get(url, timeout=timeout)
+    resp.raise_for_status()
+    return limpar_texto_html(resp.text)
+
+def extrair_texto_url_playwright(url: str, timeout_ms: int = 20000) -> str:
+    if not PLAYWRIGHT_DISPONIVEL:
+        return ""
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+        html_renderizado = page.content()
+        browser.close()
+
+    return limpar_texto_html(html_renderizado)
+
+def extrair_texto_url(url: str) -> str:
+    try:
+        texto = extrair_texto_url_requests(url)
+        if len(texto) >= MIN_TEXTO_WEB:
+            return texto
+    except Exception:
+        pass
+
+    try:
+        texto = extrair_texto_url_playwright(url)
+        return texto
+    except Exception:
+        return ""
+
+def gerar_trecho_relevante(texto: str, pergunta: str, tamanho: int = 1300) -> str:
+    if not texto:
+        return ""
+
+    termos = [t.lower() for t in re.findall(r"\w+", pergunta) if len(t) >= 4]
+    texto_lower = texto.lower()
+
+    melhor_pos = 0
+    melhor_score = -1
+
+    for termo in termos:
+        pos = texto_lower.find(termo)
+        if pos != -1:
+            janela = texto_lower[max(0, pos - 600): pos + 600]
+            score = sum(1 for t in termos if t in janela)
+            if score > melhor_score:
+                melhor_score = score
+                melhor_pos = pos
+
+    inicio = max(0, melhor_pos - tamanho // 2)
+    fim = min(len(texto), inicio + tamanho)
+    trecho = texto[inicio:fim]
+
+    return normalizar_texto(trecho)
+
+def pesquisar_links_web(pergunta: str, max_links: int = TOP_LINKS_WEB):
+    url = f"https://html.duckduckgo.com/html/?q={quote_plus(pergunta)}"
+
+    try:
+        sessao = criar_sessao_http()
+        resp = sessao.get(url, timeout=20)
+        resp.raise_for_status()
+    except Exception:
+        return []
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    links = []
+
+    for a in soup.select("a.result__a"):
+        href = a.get("href")
+        if href and href.startswith("http"):
+            links.append(href)
+
+    vistos = set()
+    unicos = []
+    for link in links:
+        if link not in vistos:
+            vistos.add(link)
+            unicos.append(link)
+
+    return unicos[:max_links]
+
+def buscar_na_internet(pergunta: str, max_links: int = TOP_LINKS_WEB):
+    links = pesquisar_links_web(pergunta, max_links=max_links)
+    resultados = []
+
+    for url in links:
+        if not dominio_confiavel(url):
+            continue
+
+        texto = extrair_texto_url(url)
+        if not texto:
+            continue
+
+        trecho = gerar_trecho_relevante(texto, pergunta)
+
+        resultados.append({
+            "url": url,
+            "trecho": trecho,
+            "texto": texto
+        })
+
+    return resultados
+
+def montar_resposta_web_direta(pergunta: str, resultados_web: list):
+    if not resultados_web:
+        return (
+            "Não localizei base suficiente para responder com segurança.\n\n"
+            "OBSERVAÇÃO TÉCNICA:\n"
+            "A pesquisa web não retornou fonte confiável utilizável."
+        )
+
+    linhas = []
+    linhas.append("RESPOSTA DIRETA:")
+    linhas.append("Foram localizadas fontes web confiáveis relacionadas ao tema. Abaixo seguem os trechos relevantes, sem improviso e sem extrapolação.\n")
+
+    linhas.append("FUNDAMENTO:")
+    for i, item in enumerate(resultados_web[:3], start=1):
+        linhas.append(f"{i}. {item['url']}")
+        linhas.append(f"Trecho relevante: {item['trecho']}\n")
+
+    linhas.append("GRAU DE CERTEZA:")
+    linhas.append("Pesquisa web localizada; depende de conferência literal da fonte oficial.\n")
+
+    linhas.append("OBSERVAÇÃO TÉCNICA:")
+    linhas.append("A resposta acima foi montada diretamente a partir dos trechos coletados na internet, sem usar Gemini para pesquisar ou interpretar a web.")
+    return "\n".join(linhas)
+
+# =========================================================
 # INDEXAÇÃO DE TODOS OS ARQUIVOS EM CHUNKS
 # =========================================================
 @st.cache_data(show_spinner=False)
@@ -488,9 +682,8 @@ def montar_contexto(trechos, pergunta: str):
 # =========================================================
 # GERAÇÃO DE RESPOSTA
 # =========================================================
-def gerar_resposta(pergunta: str, modo_estrito: bool = True):
+def gerar_resposta_base_local_com_gemini(pergunta: str, trechos):
     cliente = criar_cliente()
-    trechos = buscar_trechos_na_base(pergunta, TOP_CHUNKS)
     contexto = montar_contexto(trechos, pergunta)
 
     prompt_final = f"""
@@ -517,32 +710,80 @@ INSTRUÇÕES FINAIS DE EXECUÇÃO
 Se não houver base suficiente, use uma das fórmulas de insuficiência previstas no prompt.
 """.strip()
 
+    resposta = cliente.models.generate_content(
+        model=MODELO_GEMINI,
+        contents=prompt_final
+    )
+
+    texto = ""
+    if hasattr(resposta, "text") and resposta.text:
+        texto = resposta.text.strip()
+
+    if not texto:
+        texto = "Não houve resposta textual do modelo."
+
+    return texto
+
+def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool = False):
     inicio = time.time()
+    trechos = buscar_trechos_na_base(pergunta, TOP_CHUNKS)
 
     try:
-        resposta = cliente.models.generate_content(
-            model=MODELO_GEMINI,
-            contents=prompt_final
-        )
+        # 1) BASE LOCAL PRIMEIRO
+        if trechos:
+            texto = gerar_resposta_base_local_com_gemini(pergunta, trechos)
+            tempo = round(time.time() - inicio, 2)
+
+            return {
+                "ok": True,
+                "texto": texto,
+                "tempo": tempo,
+                "trechos": trechos,
+                "erro": "",
+                "origem": "base_local",
+                "fontes_web": []
+            }
+
+        # 2) MODO ESTRITO: NÃO SAI DA BASE LOCAL
+        if modo_estrito:
+            tempo = round(time.time() - inicio, 2)
+            return {
+                "ok": True,
+                "texto": "Não localizei base suficiente para responder com segurança.",
+                "tempo": tempo,
+                "trechos": [],
+                "erro": "",
+                "origem": "nenhuma",
+                "fontes_web": []
+            }
+
+        # 3) WEB SEM GEMINI
+        if pesquisar_web:
+            resultados_web = buscar_na_internet(pergunta, max_links=TOP_LINKS_WEB)
+
+            if resultados_web:
+                texto = montar_resposta_web_direta(pergunta, resultados_web)
+                tempo = round(time.time() - inicio, 2)
+
+                return {
+                    "ok": True,
+                    "texto": texto,
+                    "tempo": tempo,
+                    "trechos": [],
+                    "erro": "",
+                    "origem": "web_direta",
+                    "fontes_web": [r["url"] for r in resultados_web]
+                }
 
         tempo = round(time.time() - inicio, 2)
-        texto = ""
-
-        if hasattr(resposta, "text") and resposta.text:
-            texto = resposta.text.strip()
-
-        if not texto:
-            texto = "Não houve resposta textual do modelo."
-
-        if modo_estrito and not trechos:
-            texto = "Não localizei base suficiente para responder com segurança."
-
         return {
             "ok": True,
-            "texto": texto,
+            "texto": "Não localizei base suficiente para responder com segurança.",
             "tempo": tempo,
-            "trechos": trechos,
-            "erro": ""
+            "trechos": [],
+            "erro": "",
+            "origem": "nenhuma",
+            "fontes_web": []
         }
 
     except Exception as e:
@@ -552,7 +793,9 @@ Se não houver base suficiente, use uma das fórmulas de insuficiência prevista
             "texto": "",
             "tempo": tempo,
             "trechos": trechos,
-            "erro": str(e)
+            "erro": str(e),
+            "origem": "erro",
+            "fontes_web": []
         }
 
 # =========================================================
@@ -578,6 +821,10 @@ with st.expander("Configuração", expanded=False):
         "Mostrar diagnóstico técnico",
         value=True
     )
+    pesquisar_web = st.checkbox(
+        "Pesquisar na internet se a base local não trouxer resposta suficiente",
+        value=False
+    )
 
 # =========================================================
 # ENTRADA
@@ -595,8 +842,12 @@ if st.button("INICIAR"):
     if not pergunta.strip():
         st.warning("Digite uma pergunta.")
     else:
-        with st.spinner("ROMANUS consultando toda a base..."):
-            resultado = gerar_resposta(pergunta, modo_estrito=modo_estrito)
+        with st.spinner("ROMANUS consultando a base..."):
+            resultado = gerar_resposta(
+                pergunta,
+                modo_estrito=modo_estrito,
+                pesquisar_web=pesquisar_web
+            )
 
         if not resultado["ok"]:
             st.error("Erro ao gerar resposta.")
@@ -604,9 +855,14 @@ if st.button("INICIAR"):
         else:
             st.markdown("### Resposta")
             st.markdown(
-                f'<div class="bloco-resposta">{resultado["texto"]}</div>',
+                f'<div class="bloco-resposta">{html.escape(resultado["texto"])}</div>',
                 unsafe_allow_html=True
             )
+
+            if resultado.get("fontes_web"):
+                st.markdown("### Fontes web")
+                for fonte in resultado["fontes_web"]:
+                    st.markdown(f"- {fonte}")
 
         if mostrar_debug:
             base_total = carregar_base_local()
@@ -622,11 +878,14 @@ if st.button("INICIAR"):
                 f"Referências localizadas: {referencias if referencias else 'Nenhuma'}\n"
                 f"Modelo: {MODELO_GEMINI}\n"
                 f"Tempo de resposta: {resultado.get('tempo', 0)} s\n"
-                f"Modo estrito: {'Ligado' if modo_estrito else 'Desligado'}"
+                f"Modo estrito: {'Ligado' if modo_estrito else 'Desligado'}\n"
+                f"Pesquisa web: {'Ligada' if pesquisar_web else 'Desligada'}\n"
+                f"Origem final da resposta: {resultado.get('origem', 'desconhecida')}\n"
+                f"Playwright disponível: {'Sim' if PLAYWRIGHT_DISPONIVEL else 'Não'}"
             )
 
             st.markdown("### Diagnóstico")
             st.markdown(
-                f'<div class="debug-box">{debug_texto}</div>',
+                f'<div class="debug-box">{html.escape(debug_texto)}</div>',
                 unsafe_allow_html=True
             )
