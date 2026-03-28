@@ -293,48 +293,90 @@ def score_nome_arquivo(nome: str, pergunta: str) -> int:
 
 def score_chunk(chunk: str, arquivo: str, pergunta: str) -> int:
     chunk_lower = chunk.lower()
+    pergunta_lower = (pergunta or "").lower()
     termos = normalizar_termos(pergunta)
     score = 0
 
     for termo in termos:
-        score += chunk_lower.count(termo) * 4
+        ocorrencias = chunk_lower.count(termo)
+        if ocorrencias > 0:
+            score += ocorrencias * 6
 
     score += score_nome_arquivo(arquivo, pergunta)
 
     if pergunta_pede_lista(pergunta):
         gatilhos_lista = [
             "constituem", "incluem", "compreendem", "são medidas",
-            "medidas de segurança contra incêndio",
             "deverá ser levado em consideração",
             "i -", "ii -", "iii -", "iv -", "v -", "vi -"
         ]
         for g in gatilhos_lista:
             if g in chunk_lower:
-                score += 25
+                score += 12
 
-    if "decreto" in pergunta.lower() and "decreto" in arquivo.lower():
-        score += 40
+    if "decreto" in pergunta_lower and "decreto" in arquivo.lower():
+        score += 20
 
-    if "medidas de segurança contra incêndio" in chunk_lower:
-        score += 35
+    if ("artigo 20" in pergunta_lower or "art. 20" in pergunta_lower) and ("artigo 20" in chunk_lower or "art. 20" in chunk_lower):
+        score += 20
 
-    if "artigo 20" in chunk_lower or "art. 20" in chunk_lower:
-        score += 40
+    if ("capítulo viii" in pergunta_lower or "capitulo viii" in pergunta_lower) and ("capítulo viii" in chunk_lower or "capitulo viii" in chunk_lower):
+        score += 12
 
-    if "capítulo viii" in chunk_lower or "capitulo viii" in chunk_lower:
+    if "medidas de segurança contra incêndio" in pergunta_lower and "medidas de segurança contra incêndio" in chunk_lower:
         score += 20
 
     return score
 
-def base_local_suficiente(trechos):
+def base_local_suficiente(trechos, pergunta: str):
     if not trechos:
         return False
-    melhor_score = max(t.get("score", 0) for t in trechos)
-    return melhor_score >= SCORE_MINIMO_BASE
+
+    termos = normalizar_termos(pergunta)
+    if not termos:
+        return False
+
+    melhor = trechos[0]
+    texto = (melhor.get("trecho") or "").lower()
+    termos_presentes = sum(1 for t in termos if t in texto)
+
+    if len(termos) == 1:
+        minimo_termos = 1
+    elif len(termos) == 2:
+        minimo_termos = 2
+    else:
+        minimo_termos = 2
+
+    melhor_score = melhor.get("score", 0)
+
+    return melhor_score >= SCORE_MINIMO_BASE and termos_presentes >= minimo_termos
 
 # =========================================================
 # RESPOSTAS DIRETAS DO SISTEMA
 # =========================================================
+def resposta_identidade(pergunta: str):
+    p = (pergunta or "").lower().strip()
+
+    gatilhos_nome = [
+        "qual é o seu nome",
+        "qual o seu nome",
+        "como é o seu nome",
+        "quem é você",
+        "como você se chama"
+    ]
+
+    if any(g in p for g in gatilhos_nome):
+        return (
+            "RESPOSTA DIRETA:\n"
+            "Meu nome é ROMANUS.\n\n"
+            "FUNDAMENTO:\n"
+            "Identidade definida na própria aplicação.\n\n"
+            "GRAU DE CERTEZA:\n"
+            "Direto do sistema."
+        )
+
+    return None
+
 def resposta_data_hora_local(pergunta: str):
     p = (pergunta or "").lower().strip()
 
@@ -604,14 +646,14 @@ def montar_resposta_web_direta(resultados_web: list, houve_base_local: bool = Fa
 # DECISÃO FINAL
 # =========================================================
 def decidir_origem_resposta(pergunta: str, trechos_base: list, resultados_web: list):
-    base_ok = base_local_suficiente(trechos_base)
+    base_ok = base_local_suficiente(trechos_base, pergunta)
     web_ok = web_suficiente(resultados_web)
     pergunta_tecnica = pergunta_tecnica_da_base(pergunta)
 
     if base_ok and web_ok:
         if pergunta_tecnica:
             return "base_com_apoio_web"
-        return "base_com_apoio_web"
+        return "web_direta"
 
     if base_ok and not web_ok:
         return "base_local"
@@ -628,7 +670,20 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
     inicio = time.time()
 
     try:
-        # 0) Respostas diretas do sistema
+        resposta_id = resposta_identidade(pergunta)
+        if resposta_id:
+            tempo = round(time.time() - inicio, 2)
+            return {
+                "ok": True,
+                "texto": resposta_id,
+                "tempo": tempo,
+                "trechos": [],
+                "erro": "",
+                "origem": "sistema",
+                "fontes_web": [],
+                "resultados_web": []
+            }
+
         resposta_sistema = resposta_data_hora_local(pergunta)
         if resposta_sistema:
             tempo = round(time.time() - inicio, 2)
@@ -643,15 +698,12 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
                 "resultados_web": []
             }
 
-        # 1) Sempre consulta base local
         trechos = buscar_trechos_na_base(pergunta, TOP_CHUNKS)
 
-        # 2) Sempre consulta internet também, se a opção estiver ligada
         resultados_web = []
         if pesquisar_web:
             resultados_web = buscar_na_internet(pergunta, max_links=TOP_LINKS_WEB)
 
-        # 3) Decide a origem final
         origem = decidir_origem_resposta(pergunta, trechos, resultados_web)
 
         if origem == "base_local":
