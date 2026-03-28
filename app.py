@@ -37,6 +37,7 @@ SOBREPOSICAO_CHUNK = 250
 TOP_CHUNKS = 12
 TOP_LINKS_WEB = 5
 MIN_TEXTO_WEB = 500
+SCORE_MINIMO_BASE = 35
 
 PALAVRAS_IGNORADAS = {
     "a", "o", "e", "de", "da", "do", "das", "dos", "um", "uma",
@@ -271,7 +272,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================
-# CLIENTE GEMINI
+# CLIENTES
 # =========================================================
 @st.cache_resource
 def criar_cliente():
@@ -461,6 +462,13 @@ def score_chunk(chunk: str, arquivo: str, pergunta: str) -> int:
         score += 20
 
     return score
+
+def base_local_suficiente(trechos):
+    if not trechos:
+        return False
+
+    melhor_score = max(t.get("score", 0) for t in trechos)
+    return melhor_score >= SCORE_MINIMO_BASE
 
 # =========================================================
 # BUSCA WEB
@@ -729,8 +737,10 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
     trechos = buscar_trechos_na_base(pergunta, TOP_CHUNKS)
 
     try:
-        # 1) BASE LOCAL PRIMEIRO
-        if trechos:
+        base_suficiente = base_local_suficiente(trechos)
+
+        # 1) Só usa base local se ela for realmente suficiente
+        if base_suficiente:
             texto = gerar_resposta_base_local_com_gemini(pergunta, trechos)
             tempo = round(time.time() - inicio, 2)
 
@@ -744,20 +754,20 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
                 "fontes_web": []
             }
 
-        # 2) MODO ESTRITO: NÃO SAI DA BASE LOCAL
+        # 2) Se estiver em modo estrito, para aqui
         if modo_estrito:
             tempo = round(time.time() - inicio, 2)
             return {
                 "ok": True,
                 "texto": "Não localizei base suficiente para responder com segurança.",
                 "tempo": tempo,
-                "trechos": [],
+                "trechos": trechos,
                 "erro": "",
                 "origem": "nenhuma",
                 "fontes_web": []
             }
 
-        # 3) WEB SEM GEMINI
+        # 3) Se a base não for suficiente e a pesquisa web estiver ligada, vai para a internet
         if pesquisar_web:
             resultados_web = buscar_na_internet(pergunta, max_links=TOP_LINKS_WEB)
 
@@ -769,7 +779,7 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
                     "ok": True,
                     "texto": texto,
                     "tempo": tempo,
-                    "trechos": [],
+                    "trechos": trechos,
                     "erro": "",
                     "origem": "web_direta",
                     "fontes_web": [r["url"] for r in resultados_web]
@@ -780,7 +790,7 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = True, pesquisar_web: bool
             "ok": True,
             "texto": "Não localizei base suficiente para responder com segurança.",
             "tempo": tempo,
-            "trechos": [],
+            "trechos": trechos,
             "erro": "",
             "origem": "nenhuma",
             "fontes_web": []
@@ -870,12 +880,18 @@ if st.button("INICIAR"):
             arquivos_usados = [t["arquivo"] for t in resultado.get("trechos", [])]
             referencias = [t["referencia"] for t in resultado.get("trechos", []) if t.get("referencia")]
 
+            melhor_score = 0
+            if resultado.get("trechos"):
+                melhor_score = max(t.get("score", 0) for t in resultado["trechos"])
+
             debug_texto = (
                 f"Arquivos na base: {len(base_total)}\n"
                 f"Chunks totais indexados: {len(indice_total)}\n"
                 f"Trechos retornados para a resposta: {len(resultado.get('trechos', []))}\n"
                 f"Arquivos usados: {arquivos_usados if arquivos_usados else 'Nenhum'}\n"
                 f"Referências localizadas: {referencias if referencias else 'Nenhuma'}\n"
+                f"Melhor score encontrado: {melhor_score}\n"
+                f"Score mínimo para considerar a base suficiente: {SCORE_MINIMO_BASE}\n"
                 f"Modelo: {MODELO_GEMINI}\n"
                 f"Tempo de resposta: {resultado.get('tempo', 0)} s\n"
                 f"Modo estrito: {'Ligado' if modo_estrito else 'Desligado'}\n"
