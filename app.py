@@ -43,7 +43,10 @@ PALAVRAS_IGNORADAS = {
     "quais", "onde", "quando", "isso", "essa", "esse", "sobre",
     "as", "os", "ao", "aos", "na", "no", "nas", "nos",
     "bom", "boa", "dia", "tarde", "noite", "oi", "ola", "olá",
-    "me", "diga", "pesquise", "internet", "quero", "saber"
+    "me", "diga", "pesquise", "internet", "quero", "saber",
+    "cidade", "cidades", "estado", "estados", "sul", "norte",
+    "leste", "oeste", "paulo", "sao", "são", "brasil", "brasileiro",
+    "brasileira", "atual", "nome", "lista", "quaisas", "quale"
 }
 
 PALAVRAS_TECNICAS_BASE = {
@@ -638,8 +641,14 @@ def score_chunk(chunk: str, arquivo: str, pergunta: str, ref: dict) -> int:
             score += 30
 
     if not pergunta_tecnica_da_base(pergunta):
-        if any(t in chunk_norm for t in ["incendio", "seguranca contra incendio", "hidrantes", "chuveiros"]):
-            score -= 25
+        termos_tecnicos = [
+            "incendio", "seguranca contra incendio", "hidrantes", "chuveiros",
+            "edificacao", "edificacoes", "area de risco", "rotas de fuga",
+            "brigada", "extintores", "alarme", "avcb", "clcb",
+            "regulamento", "instrucao tecnica", "decreto"
+        ]
+        ocorrencias_tecnicas = sum(1 for t in termos_tecnicos if t in chunk_norm)
+        score -= ocorrencias_tecnicas * 15
 
     return score
 
@@ -716,6 +725,9 @@ def base_local_suficiente(trechos, pergunta: str, ref: dict):
     if not trechos:
         return False
 
+    if not pergunta_tecnica_da_base(pergunta) and ref["tipo"] not in {"it", "decreto"}:
+        return False
+
     termos = normalizar_termos(pergunta)
     if not termos and not ref["tipo"]:
         return False
@@ -726,10 +738,9 @@ def base_local_suficiente(trechos, pergunta: str, ref: dict):
     melhor_score = melhor.get("score", 0)
 
     if ref["tipo"] in {"it", "decreto"}:
-        if melhor_score >= 40:
-            return True
+        return melhor_score >= 40
 
-    minimo_termos = 1 if len(termos) <= 1 else 2
+    minimo_termos = 2 if len(termos) <= 3 else 3
     return melhor_score >= SCORE_MINIMO_BASE and termos_presentes >= minimo_termos
 
 def montar_resposta_base_local_direta(pergunta: str, trechos: list, houve_apoio_web: bool = False):
@@ -1308,7 +1319,8 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = False, pesquisar_web: boo
                 resultados_web = buscar_na_internet(pergunta, max_links=TOP_LINKS_WEB)
 
             if not web_suficiente(resultados_web):
-                trechos, docs_candidatos, ref = buscar_trechos_na_base(pergunta, TOP_CHUNKS)
+                trechos = []
+                docs_candidatos = []
 
         else:
             trechos, docs_candidatos, ref = buscar_trechos_na_base(pergunta, TOP_CHUNKS)
