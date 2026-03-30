@@ -57,7 +57,10 @@ PALAVRAS_TECNICAS_BASE = {
     "sinalização", "mangotinhos", "carga de incendio", "carga de incêndio",
     "avcb", "clcb", "brigada", "detecção", "deteccao", "alarme",
     "resistencia ao fogo", "compartimentacao", "lotacao", "lotação",
-    "saidas", "edificacao", "edificacao", "proteção passiva", "protecao passiva"
+    "saidas", "edificacao", "protecao passiva", "proteção passiva",
+    "compartimentação", "resistência ao fogo", "proteção ativa",
+    "protecao ativa", "hidrantes urbanos", "controle de fumaca",
+    "controle de fumaça", "saídas de emergência"
 }
 
 DOMINIOS_CONFIAVEIS = [
@@ -291,54 +294,9 @@ def pergunta_pede_identidade(pergunta: str) -> bool:
     return any(g in p for g in gatilhos)
 
 def pergunta_geral_web(pergunta: str) -> bool:
-    p = texto_norm(pergunta)
-
     if pergunta_tecnica_da_base(pergunta):
         return False
-
-    gatilhos = [
-        "quem e ",
-        "quem foi ",
-        "o que e ",
-        "o que foi ",
-        "qual a capital",
-        "qual e a capital",
-        "quem descobriu",
-        "quando nasceu",
-        "quando morreu",
-        "biografia",
-        "historia de",
-        "história de",
-        "quem e o presidente",
-        "quem e o atual presidente",
-        "qual o nome do presidente",
-        "qual e o nome do presidente",
-        "quem e o governador",
-        "qual o nome do governador",
-        "qual e o nome do governador",
-        "quem e o ministro",
-        "qual o nome do ministro",
-        "qual e o nome do ministro",
-        "quem e o prefeito",
-        "qual o nome do prefeito",
-        "qual e o nome do prefeito",
-        "presidente da china",
-        "presidente do brasil",
-        "presidente dos estados unidos",
-        "valor atual",
-        "cotacao",
-        "cotação",
-        "noticia",
-        "notícia",
-        "resultado do jogo",
-        "quem ganhou",
-        "placar",
-        "previsao do tempo",
-        "previsão do tempo",
-        "temperatura"
-    ]
-
-    return any(g in p for g in gatilhos)
+    return True
 
 def detectar_assunto_prioritario(pergunta: str):
     p = texto_norm(pergunta)
@@ -968,20 +926,22 @@ def score_resultado_web(texto: str, pergunta: str, url: str = "") -> int:
     score = 0
 
     for termo in termos:
-        if termo in texto_lower:
-            score += 1
+        ocorrencias = texto_lower.count(termo)
+        if ocorrencias > 0:
+            score += min(ocorrencias, 5)
 
     pergunta_n = texto_norm(pergunta)
+
     if any(g in pergunta_n for g in ["presidente", "governador", "ministro", "prefeito"]):
         if any(t in texto_lower for t in ["presidente", "governador", "ministro", "prefeito"]):
-            score += 2
+            score += 3
 
     if dominio_altissima_confianca(url):
-        score += 2
+        score += 4
     elif dominio_confiavel(url):
-        score += 1
+        score += 2
 
-    if not pergunta_tecnica_da_base(pergunta):
+    if len(texto) > 500:
         score += 1
 
     return score
@@ -1023,11 +983,10 @@ def pesquisar_links_web(consulta: str, max_links: int = TOP_LINKS_WEB):
 def pesquisar_links_web_multicamadas(pergunta: str, max_links: int = TOP_LINKS_WEB):
     consultas = [
         pergunta,
-        f"site:gov.br {pergunta}",
-        f"site:wikipedia.org {pergunta}",
-        f"site:britannica.com {pergunta}",
-        f"site:reuters.com {pergunta}",
-        f"site:bbc.com {pergunta}",
+        f'"{pergunta}"',
+        f"{pergunta} wikipedia",
+        f"{pergunta} noticia OR notícia OR news",
+        f"{pergunta} explicação OR explicacao OR conceito"
     ]
 
     links_finais = []
@@ -1150,12 +1109,9 @@ def buscar_na_internet(pergunta: str, max_links: int = TOP_LINKS_WEB):
     if wikidata:
         resultados.extend(wikidata)
 
-    links = pesquisar_links_web_multicamadas(pergunta, max_links=max_links * 2)
+    links = pesquisar_links_web_multicamadas(pergunta, max_links=max_links * 3)
 
     for url in links:
-        if not dominio_confiavel(url):
-            continue
-
         texto = extrair_texto_url(url)
         if not texto or len(texto) < MIN_TEXTO_WEB:
             continue
@@ -1226,7 +1182,7 @@ def montar_resposta_web_direta(resultados_web: list, pergunta: str, houve_base_l
         return (
             "Não localizei base suficiente para responder com segurança.\n\n"
             "OBSERVAÇÃO TÉCNICA:\n"
-            "A pesquisa web não retornou fonte confiável utilizável."
+            "A pesquisa web não retornou fonte utilizável."
         )
 
     melhor = resultados_web[0]
@@ -1239,7 +1195,7 @@ def montar_resposta_web_direta(resultados_web: list, pergunta: str, houve_base_l
     if resposta_curta:
         linhas.append(f"Indício principal localizado: {resposta_curta}.\n")
     else:
-        linhas.append("Localizei fonte web confiável com indício relevante para responder à pergunta.\n")
+        linhas.append("Localizei fonte web com indício relevante para responder à pergunta.\n")
 
     linhas.append("FUNDAMENTO:")
     linhas.append(f"Fonte principal: {url}")
@@ -1264,10 +1220,9 @@ def classificar_rota(pergunta: str) -> str:
     if resposta_data_hora_local(pergunta):
         return "sistema"
 
-    if pergunta_geral_web(pergunta):
-        return "web_primeiro"
+    ref = detectar_referencia(pergunta)
 
-    if pergunta_tecnica_da_base(pergunta) or detectar_referencia(pergunta)["tipo"] in {"it", "decreto"}:
+    if pergunta_tecnica_da_base(pergunta) or ref["tipo"] in {"it", "decreto"}:
         return "base_primeiro"
 
     return "web_primeiro"
@@ -1379,7 +1334,7 @@ def gerar_resposta(pergunta: str, modo_estrito: bool = False, pesquisar_web: boo
                 texto = (
                     "Não localizei base suficiente para responder com segurança.\n\n"
                     "OBSERVAÇÃO TÉCNICA:\n"
-                    "Após consultar a base local e múltiplas fontes web confiáveis, não localizei fundamento suficiente para responder com segurança."
+                    "Após consultar a base local e múltiplas fontes web, não localizei fundamento suficiente para responder com segurança."
                 )
 
         tempo = round(time.time() - inicio, 2)
