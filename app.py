@@ -1,6 +1,5 @@
 import streamlit as st
 from google import genai
-from PIL import Image
 
 st.set_page_config(page_title="ROMANUS", layout="wide")
 
@@ -106,40 +105,6 @@ Postura de comunicação:
 - Nunca humilhe o usuário, mesmo que a pergunta seja simples, repetida ou confusa.
 - Se a pergunta estiver ambígua, peça esclarecimento com educação.
 - Priorize sempre uma comunicação útil, respeitosa e confiável.
-- Priorize sempre uma comunicação útil, respeitosa e confiável.
-
-Fundamentação jurídica e normativa:
-- Sempre que a pergunta envolver tema jurídico, administrativo, técnico-normativo ou regulatório, responda com base em lei, decreto, norma, instrução técnica, regulamento ou ato oficial aplicável.
-- Sempre que possível, cite expressamente a base utilizada, com número da norma, ano e artigo, item ou dispositivo relevante.
-- Quando houver hierarquia normativa, priorize nesta ordem:
-  1. Constituição
-  2. Lei complementar
-  3. Lei ordinária
-  4. Decreto
-  5. Regulamento
-  6. Instrução técnica
-  7. Norma complementar aplicável
-- Nunca invente artigo, inciso, item, número de norma ou entendimento.
-- Se não tiver segurança quanto ao fundamento exato, diga isso de forma clara e respeitosa.
-- Quando a pergunta depender de norma estadual ou local, priorize a norma do ente competente.
-- Em temas de segurança contra incêndio no Estado de São Paulo, priorize a legislação paulista e as Instruções Técnicas do Corpo de Bombeiros do Estado de São Paulo.
-- Em respostas técnicas, diferencie com clareza:
-  - o que é exigência legal;
-  - o que é exigência regulamentar;
-  - o que é exigência técnica;
-  - o que é recomendação prática.
-- Quando houver risco de interpretação controvertida, informe que a conclusão depende da análise do caso concreto e da norma aplicável.
-- Sempre que possível, estruture a resposta assim:
-  1. resposta objetiva;
-  2. fundamento legal ou normativo;
-  3. conclusão prática.
-- Se o usuário pedir resposta curta, mantenha a fundamentação enxuta, mas ainda cite a base principal.
-- Se o usuário pedir resposta completa, detalhe a norma, a lógica da aplicação e a consequência prática.
-
-Modelo de saída preferencial:
-- Resposta objetiva: [resposta direta]
-- Fundamento: [norma, artigo, item ou dispositivo]
-- Conclusão prática: [o que isso significa na prática]
 """
 
 if "historico" not in st.session_state:
@@ -149,7 +114,7 @@ if "pergunta" not in st.session_state:
     st.session_state.pergunta = ""
 
 
-def gerar_resposta(pergunta: str, imagem=None) -> str:
+def gerar_resposta(pergunta: str) -> str:
     pergunta = pergunta.strip()
 
     if not pergunta:
@@ -159,16 +124,10 @@ def gerar_resposta(pergunta: str, imagem=None) -> str:
         return "Sim. Respondo com base em critérios técnicos, hierarquia normativa e confirmação complementar por fontes confiáveis da internet."
 
     try:
-        if imagem is not None:
-            resposta = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[f"{prompt_base}\n\nPergunta do usuário: {pergunta}", imagem],
-            )
-        else:
-            resposta = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=f"{prompt_base}\n\nPergunta do usuário: {pergunta}",
-            )
+        resposta = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=f"{prompt_base}\n\nPergunta do usuário: {pergunta}",
+        )
 
         texto = getattr(resposta, "text", None)
         if texto and texto.strip():
@@ -187,17 +146,6 @@ for item in st.session_state.historico:
         st.markdown(item["texto"])
 
 st.markdown("</div>", unsafe_allow_html=True)
-imagem = None
-
-with st.expander("📷 Enviar imagem", expanded=False):
-    uploaded_file = st.file_uploader(
-        "Escolha uma imagem",
-        type=["jpg", "jpeg", "png"]
-    )
-
-    if uploaded_file is not None:
-        imagem = Image.open(uploaded_file)
-        st.image(imagem, caption="Imagem enviada", use_container_width=True)
 
 pergunta = st.chat_input("Pergunte à ROMANUS...")
 
@@ -210,7 +158,7 @@ if pergunta:
         with st.chat_message("user"):
             st.markdown(pergunta)
 
-        texto_resposta = gerar_resposta(pergunta, imagem)
+        texto_resposta = gerar_resposta(pergunta)
 
         st.session_state.historico.append({"tipo": "ia", "texto": texto_resposta})
 
