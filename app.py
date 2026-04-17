@@ -45,7 +45,6 @@ for msg in st.session_state.messages:
 
 # BARRA DE DIGITAÇÃO
 if prompt := st.chat_input("Comandante, ordene a busca no banco de dados..."):
- "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
