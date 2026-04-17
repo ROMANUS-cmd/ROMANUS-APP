@@ -1,5 +1,5 @@
-import streamlit os
-import re
+import streamlit as st
+import os
 from pypdf import PdfReader
 
 # =========================
