@@ -3,89 +3,75 @@ import re
 from pypdf import PdfReader
 
 # =========================
-# CONFIGURAÇÃO =========================
-st.set_page_config(page_title="ROMANO layout="wide")
+# 1. CONFIGURAÇÃO DE INTERFACE =========================
+st.set_page_config(page_title="ROMANO v6.0", layout="wide")
 
-# Caminhos da Base de Conhecimento = "base_conhecimento"
-if not os.path.exists(PASTA_BASE):
-    os.makedirs(PASTA_BASE)
+# Estilização Militar
+st.markdown("""
+    <style>
+    .stApp #0e1117; color: #e0e0e0; }
+    h1 { color: #8B0000; font-family: 'Georgia',    </style>
+    """, unsafe_allow_html=True)
+
+st.title("⚔️ ROMANO v6.0 - BANCO DE DADOS LOCAL")
 
 # =========================
-# MOTOR DE BUSCA LOCAL (SEM INTERNET)
+# 2. MOTOR DE BUSCA INTERNO
 # =========================
+PASTA_BASE = "base_conhecimento"
 
 def extrair_texto_pdf(caminho):
     try:
-        reader        texto      for reader.pages:
-    texto += page.extract_text() + "\n"
+        reader        texto = " ".join([p.extract_text() for p in reader.pages if p.extract_text()])
         return texto
     except:
         return ""
 
 @st.cache_data
-def carregar_e_indexar():
- = []
-    for raiz, diretorios, arquivos in os.walk(PASTA_BASE):
- arquivo in arquivos:
-            if arquivo.lower().endswith(".pdf"):
-                caminho_completo = os.path.join(raiz,                conteudo = extrair_texto_pdf(caminho_completo)
-                dados.append({
-                    "nome": arquivo,
-    "conteudo": conteudo,
-                 conteudo.lower()
-                })
-    return dados
-
-def banco):
-    termos pergunta.lower())
-    resultados = []
-    
-    for        score = sum(1 for termo in termos if termo        if score >        # Extrai um trecho relevante (janela de 1000 caracteres)
-    pos = doc["conteudo_clean"].find(termos[0]) if termos else 0
-         = max(0, pos - 200)
-            fim = min(len(doc["conteudo"]), pos + 800)
-            trecho = doc["conteudo"][start:fim]
-         doc["nome"], "score": score, "trecho": trecho})
-    
-    # Ordena pelos documentos com mais termos encontrados
-    return key=lambda x: x["score"], reverse=True)
+def carregar_banco():
+    banco = []
+   os.path.exists(PASTA_BASE):
+        os.makedirs(PASTA_BASE)
+    for arquivo in os.listdir(PASTA_BASE):
+ arquivo.lower().endswith(".pdf"):
+    caminho arquivo)
+                    banco.append({"nome": arquivo, "texto": conteudo, "limpo": conteudo.lower()})
+    return banco
 
 # =========================
-# INTERFACE ROMANO
+# 3. LÓGICA DE COMANDO
 # =========================
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-st.markdown("<h1 style='color: #8B0000;'>⚔️ - MODO LOCAL</h1>", unsafe_allow_html=True)
-st.sidebar.info("O está operando com a base interna do Grupo ROMANO.IA.")
+# dados
+banco_dados = carregar_banco()
 
-# Indexação automática
-with st.spinner("Sincronizando legiões    banco_de_dados = carregar_e_indexar()
+# Exibir histórico
+for m in st.session_state.messages:
+    with st.chat_message(m["role"]):
+        st.markdown(m["content"])
 
-if not in st.session_state:
- = []
-
-# Exibição do Chat
-for    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# BARRA DE DIGITAÇÃO / COMANDO
-if prompt := st.chat_input("Consulte Comandante..."):
-    st.session_state.messages.append({"role": "user", prompt})
+# Barra de prompt := st.chat_input("Ordene, Comandante..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
-        st.markdown(prompt)
-
     with st.chat_message("assistant"):
-        # Realiza a busca local
-  = pesquisar_no_banco(prompt, banco_de_dados)
+        # Busca no Banco de Dados Local
+        termos = prompt.lower().split()
+        resultados      
+        for doc in banco_dados:
+            score = sum(3 for t in termos if t in doc["nome"].lower())
+ += sum(1 for t in termos if t in doc["limpo"])
+            if score > 0:
+                resultados.append(doc)
         
- matches:
-    res_principal = matches[0]
- = f"**COMANDANTE, LOCALIZADO NA BASE         += f"**Arquivo:** `{res_principal['nome']}`\n\n"
-            resposta_final += f"**Trecho Técnico:**\n> ...{res_principal['trecho']}..."
-            
-            if len(matches) > 1:
-           += "\n\n**Outras referências encontradas:** " + ", ".join([f"`{m['nome']}`" matches[1:3]])
+        if resultados:
+            doc_eleito = resultados[0] # Pega o mais relevante
+            trecho = doc_eleito["texto"][:1500] # Pega os primeiros 1500 caracteres
+    resposta = f"**COMANDANTE, CONSULTA CONCLUÍDA NO BANCO LOCAL.**\n\n"
+    resposta += f"**FONTE:** `{doc_eleito['nome']}`\n\n"
+            resposta += f"**CONTEÚDO TÉCNICO:**\n\n{trecho}..."
         else:
-            resposta_final = "Comandante, a informação solicitada não consta no Decreto Estadual ou nas ITs arquivadas no banco de dados local."
+            resposta = "Comandante, a informação não foi localizada e ITs da base local."
 
-        st.markdown(resposta_final)
-        st.session_state.messages.append({"role": "assistant", "content": resposta_final})
+        st.session_state.messages.append({"role": "assistant", "content": resposta})
